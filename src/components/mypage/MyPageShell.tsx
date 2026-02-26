@@ -131,10 +131,10 @@ export default function MyPageShell() {
                   label="평균 응답"
                   value={`${stats.avgResponseMin}분`}
                 />
-                <MiniStat
+                {/* <MiniStat
                   label="피드백 점수"
                   value={`${stats.feedbackScore.toFixed(1)} / 5`}
-                />
+                /> */}
               </div>
             </div>
           </aside>
