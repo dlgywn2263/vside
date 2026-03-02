@@ -25,10 +25,13 @@ export default function IDELayout({ children }: { children: React.ReactNode }) {
           <Link href="#">
             <Folder className="w-6 h-6 text-slate-400 hover:text-slate-900 transition-colors" />
           </Link>
-          <Link href="#">
+          <Link href="/devlog">
             <Book className="w-6 h-6 text-slate-400 hover:text-slate-900 transition-colors" />
           </Link>
-          <Link href="/api-test" className="text-slate-900">
+          <Link
+            href="/api-test"
+            className=" text-slate-400 hover:text-slate-900 transition-colors"
+          >
             <FlaskConical className="w-6 h-6" />
           </Link>
           <Link href="#">
