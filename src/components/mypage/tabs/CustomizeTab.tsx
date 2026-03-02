@@ -51,14 +51,14 @@ export default function CustomizeTab({ prefs }: { prefs: IDEPrefs }) {
               />
             }
           />
-          <Field
+          {/* <Field
             label="AI 제안 강도"
             value={
               <div className="grid gap-2">
                 <ProgressBar value={local.aiAssistLevel} max={3} />
               </div>
             }
-          />
+          /> */}
         </div>
       </Card>
     </div>
