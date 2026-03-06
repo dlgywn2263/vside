@@ -1,6 +1,7 @@
 "use client";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import {
   Folder,
   Book,
@@ -16,6 +17,22 @@ import {
 
 export default function IDELayout({ children }: { children: React.ReactNode }) {
   const [isChatOpen, setIsChatOpen] = useState(true);
+  const pathname = usePathname();
+
+  // ✅ 현재 URL에서 projectId 추출
+  // 지원 경로:
+  // 1) /ide/devlog/[projectId]
+  // 2) /ide/[projectId]/...   (네 IDE 프로젝트 화면이 이런 형태일 가능성 높음)
+  const projectId = useMemo(() => {
+    const m =
+      pathname.match(/^\/ide\/devlog\/([^\/]+)/) ||
+      pathname.match(/^\/ide\/([^\/]+)/);
+    return m?.[1] ?? null;
+  }, [pathname]);
+
+  // ✅ IDE 안에서 devlog는 "목록" 필요 없고 상세만 필요하다고 했으니
+  // projectId 있으면 /ide/devlog/[projectId], 없으면(프로젝트 밖이면) 그냥 막아두기(#)
+  const devlogHref = projectId ? `/ide/devlog/${projectId}` : "#";
 
   return (
     <div className="flex h-screen bg-white text-slate-900 font-sans overflow-hidden">
@@ -25,9 +42,19 @@ export default function IDELayout({ children }: { children: React.ReactNode }) {
           <Link href="#">
             <Folder className="w-6 h-6 text-slate-400 hover:text-slate-900 transition-colors" />
           </Link>
-          <Link href="/devlog">
+
+          {/* ✅ 여기 수정: projectId 기반으로 devlog 이동 */}
+          <Link
+            href={devlogHref}
+            aria-disabled={!projectId}
+            onClick={(e) => {
+              if (!projectId) e.preventDefault(); // projectId 없으면 이동 막기
+            }}
+            className={!projectId ? "opacity-40 cursor-not-allowed" : undefined}
+          >
             <Book className="w-6 h-6 text-slate-400 hover:text-slate-900 transition-colors" />
           </Link>
+
           <Link
             href="/api-test"
             className=" text-slate-400 hover:text-slate-900 transition-colors"
@@ -38,6 +65,7 @@ export default function IDELayout({ children }: { children: React.ReactNode }) {
             <Rocket className="w-6 h-6 text-slate-400 hover:text-slate-900 transition-colors" />
           </Link>
         </div>
+
         <div className="flex flex-col space-y-8 mb-4">
           <User className="w-6 h-6 text-slate-400 cursor-pointer" />
           <Settings className="w-6 h-6 text-slate-400 cursor-pointer" />

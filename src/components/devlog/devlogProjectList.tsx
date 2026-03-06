@@ -12,12 +12,48 @@ type DevlogProject = {
 };
 
 const MOCK: DevlogProject[] = [
-  { id: "p1", title: "Portfolio Website", tech: "TypeScript", lastUpdated: "2026.01.05", devlogCount: 2 },
-  { id: "p2", title: "Portfolio Website1", tech: "C#", lastUpdated: "2026.01.05", devlogCount: 1 },
-  { id: "p3", title: "Portfolio Website2", tech: "Java", lastUpdated: "2026.01.05", devlogCount: 4 },
-  { id: "p4", title: "Portfolio Website3", tech: "C", lastUpdated: "2026.01.05", devlogCount: 3 },
-  { id: "p5", title: "Portfolio Website4", tech: "C++", lastUpdated: "2026.01.05", devlogCount: 1 },
-  { id: "p6", title: "Portfolio Website5", tech: "TypeScript", lastUpdated: "2026.01.05", devlogCount: 5 },
+  {
+    id: "p1",
+    title: "Portfolio Website",
+    tech: "TypeScript",
+    lastUpdated: "2026.01.05",
+    devlogCount: 2,
+  },
+  {
+    id: "p2",
+    title: "Portfolio Website1",
+    tech: "C#",
+    lastUpdated: "2026.01.05",
+    devlogCount: 1,
+  },
+  {
+    id: "p3",
+    title: "Portfolio Website2",
+    tech: "Java",
+    lastUpdated: "2026.01.05",
+    devlogCount: 4,
+  },
+  {
+    id: "p4",
+    title: "Portfolio Website3",
+    tech: "C",
+    lastUpdated: "2026.01.05",
+    devlogCount: 3,
+  },
+  {
+    id: "p5",
+    title: "Portfolio Website4",
+    tech: "C++",
+    lastUpdated: "2026.01.05",
+    devlogCount: 1,
+  },
+  {
+    id: "p6",
+    title: "Portfolio Website5",
+    tech: "TypeScript",
+    lastUpdated: "2026.01.05",
+    devlogCount: 5,
+  },
 ];
 
 export function DevlogProjectList() {
@@ -56,12 +92,16 @@ export function DevlogProjectList() {
           <div className="flex items-center gap-8 text-sm">
             <div className="flex items-center gap-2">
               <span className="text-gray-500">최근 수정 날짜 :</span>
-              <span className="font-semibold text-gray-800">{p.lastUpdated}</span>
+              <span className="font-semibold text-gray-800">
+                {p.lastUpdated}
+              </span>
             </div>
 
             <div className="flex items-center gap-2">
               <span className="text-gray-500">개발일지 개수 :</span>
-              <span className="font-semibold text-gray-800">{p.devlogCount}개</span>
+              <span className="font-semibold text-gray-800">
+                {p.devlogCount}개
+              </span>
             </div>
 
             <ChevronRight size={22} className="text-gray-900" />
