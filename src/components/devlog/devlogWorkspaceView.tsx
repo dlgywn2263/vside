@@ -99,7 +99,7 @@ function mapWorkspaceDetail(data: ApiWorkspaceDetailResponse): SolutionDetail {
         date: post.date,
         summary: post.summary,
         content: "",
-        tags: post.tags,
+        tags: post.tags ?? [],
       })),
     })),
   };
@@ -122,6 +122,10 @@ export function DevlogWorkspaceView({ workspaceId }: { workspaceId: string }) {
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
 
+  const [keyword, setKeyword] = useState("");
+  const [debouncedKeyword, setDebouncedKeyword] = useState("");
+  const [sort, setSort] = useState<"latest" | "oldest">("latest");
+
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -129,20 +133,40 @@ export function DevlogWorkspaceView({ workspaceId }: { workspaceId: string }) {
 
   const projects = useMemo(() => detail?.projects ?? [], [detail]);
 
-  const selectedProject = useMemo(() => {
-    return projects.find((p) => p.id === selectedProjectId) ?? null;
-  }, [projects, selectedProjectId]);
+  const visiblePostCount = useMemo(() => {
+    return projects.reduce((acc, project) => acc + project.posts.length, 0);
+  }, [projects]);
 
-  const reloadWorkspaceDetail = async () => {
-    const res = await fetch(
-      `${API_BASE}/api/devlogs/workspaces/${workspaceId}`,
-      {
-        headers: {
-          "X-USER-ID": USER_ID,
-        },
-        cache: "no-store",
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedKeyword(keyword.trim());
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [keyword]);
+
+  const reloadWorkspaceDetail = async (
+    qValue = debouncedKeyword,
+    sortValue = sort,
+  ) => {
+    const params = new URLSearchParams();
+
+    if (qValue) {
+      params.set("q", qValue);
+    }
+    params.set("sort", sortValue);
+
+    const queryString = params.toString();
+    const url = queryString
+      ? `${API_BASE}/api/devlogs/workspaces/${workspaceId}?${queryString}`
+      : `${API_BASE}/api/devlogs/workspaces/${workspaceId}`;
+
+    const res = await fetch(url, {
+      headers: {
+        "X-USER-ID": USER_ID,
       },
-    );
+      cache: "no-store",
+    });
 
     if (!res.ok) {
       throw new Error(`워크스페이스 상세 조회 실패 (${res.status})`);
@@ -166,7 +190,7 @@ export function DevlogWorkspaceView({ workspaceId }: { workspaceId: string }) {
       try {
         setLoading(true);
         setError(null);
-        await reloadWorkspaceDetail();
+        await reloadWorkspaceDetail(debouncedKeyword, sort);
       } catch (err) {
         console.error(err);
         setError("개발일지 목록을 불러오지 못했습니다.");
@@ -176,11 +200,23 @@ export function DevlogWorkspaceView({ workspaceId }: { workspaceId: string }) {
     };
 
     load();
-  }, [workspaceId]);
+  }, [workspaceId, debouncedKeyword, sort]);
 
   const openCreateModal = () => {
     setSelectedProjectId(detail?.projects[0]?.id ?? "");
     setIsCreateOpen(true);
+  };
+
+  const closeCreateModal = () => {
+    setIsCreateOpen(false);
+  };
+
+  const closeDetailModal = () => {
+    setIsDetailOpen(false);
+  };
+
+  const closeEditModal = () => {
+    setIsEditOpen(false);
   };
 
   const openDetailModal = async (projectId: string, postId: string) => {
@@ -296,6 +332,7 @@ export function DevlogWorkspaceView({ workspaceId }: { workspaceId: string }) {
       }
 
       await reloadWorkspaceDetail();
+      setSelectedProjectId(value.projectId);
       setIsEditOpen(false);
     } catch (err) {
       console.error(err);
@@ -329,6 +366,7 @@ export function DevlogWorkspaceView({ workspaceId }: { workspaceId: string }) {
       await reloadWorkspaceDetail();
       setIsDetailOpen(false);
       setSelectedPostDetail(null);
+      setSelectedPostId("");
     } catch (err) {
       console.error(err);
       alert("개발일지 삭제에 실패했습니다.");
@@ -375,104 +413,121 @@ export function DevlogWorkspaceView({ workspaceId }: { workspaceId: string }) {
         </button>
       </div>
 
-      <DevlogListHeader />
+      <DevlogListHeader
+        keyword={keyword}
+        sort={sort}
+        onKeywordChange={setKeyword}
+        onSortChange={setSort}
+      />
+
+      <div className="text-sm text-gray-500">
+        검색 결과{" "}
+        <span className="font-semibold text-gray-800">{visiblePostCount}</span>
+        개
+      </div>
 
       <section className="space-y-4">
-        {projects.map((project) => {
-          const isOpen = openProjectIds[project.id] ?? true;
+        {projects.length === 0 ? (
+          <div className="rounded-2xl border border-gray-200 bg-white px-5 py-10 text-center text-sm text-gray-500">
+            검색 결과가 없습니다.
+          </div>
+        ) : (
+          projects.map((project) => {
+            const isOpen = openProjectIds[project.id] ?? true;
 
-          return (
-            <div
-              key={project.id}
-              className="rounded-2xl border border-gray-200 bg-white"
-            >
-              <button
-                type="button"
-                onClick={() =>
-                  setOpenProjectIds((prev) => ({
-                    ...prev,
-                    [project.id]: !isOpen,
-                  }))
-                }
-                className="w-full rounded-2xl px-5 py-4 text-left hover:bg-gray-50"
+            return (
+              <div
+                key={project.id}
+                className="rounded-2xl border border-gray-200 bg-white"
               >
-                <div className="flex items-center justify-between gap-4">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-3 flex-wrap">
-                      <div className="text-sm font-bold text-gray-900">
-                        {project.title}
+                <button
+                  type="button"
+                  onClick={() =>
+                    setOpenProjectIds((prev) => ({
+                      ...prev,
+                      [project.id]: !isOpen,
+                    }))
+                  }
+                  className="w-full rounded-2xl px-5 py-4 text-left hover:bg-gray-50"
+                >
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-3 flex-wrap">
+                        <div className="text-sm font-bold text-gray-900">
+                          {project.title}
+                        </div>
+                        <span className="rounded-full border border-gray-200 bg-gray-50 px-3 py-1 text-xs font-semibold text-gray-700">
+                          {project.tech}
+                        </span>
                       </div>
-                      <span className="rounded-full border border-gray-200 bg-gray-50 px-3 py-1 text-xs font-semibold text-gray-700">
-                        {project.tech}
-                      </span>
+
+                      <div className="mt-1 text-xs text-gray-500">
+                        최근 수정 날짜:{" "}
+                        <span className="font-semibold text-gray-800">
+                          {project.lastUpdated}
+                        </span>
+                        <span className="mx-2 text-gray-300">·</span>
+                        개발일지 {project.posts.length}개
+                      </div>
                     </div>
 
-                    <div className="mt-1 text-xs text-gray-500">
-                      최근 수정 날짜:{" "}
-                      <span className="font-semibold text-gray-800">
-                        {project.lastUpdated}
-                      </span>
-                      <span className="mx-2 text-gray-300">·</span>
-                      개발일지 {project.posts.length}개
-                    </div>
+                    {isOpen ? (
+                      <ChevronDown size={20} className="text-gray-700" />
+                    ) : (
+                      <ChevronRight size={20} className="text-gray-700" />
+                    )}
                   </div>
+                </button>
 
-                  {isOpen ? (
-                    <ChevronDown size={20} className="text-gray-700" />
-                  ) : (
-                    <ChevronRight size={20} className="text-gray-700" />
-                  )}
-                </div>
-              </button>
+                {isOpen ? (
+                  <div className="px-5 pb-5 pt-1">
+                    {project.posts.length === 0 ? (
+                      <div className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-4 text-sm text-gray-500">
+                        개발일지가 없습니다.
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        {project.posts.map((post) => (
+                          <button
+                            key={post.id}
+                            type="button"
+                            onClick={() => openDetailModal(project.id, post.id)}
+                            className="block w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-left transition hover:border-gray-300 hover:shadow-sm"
+                          >
+                            <div className="space-y-2">
+                              <div className="text-xs text-gray-500">
+                                {post.date}
+                              </div>
 
-              {isOpen ? (
-                <div className="px-5 pb-5 pt-1">
-                  {project.posts.length === 0 ? (
-                    <div className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-4 text-sm text-gray-500">
-                      개발일지가 없습니다.
-                    </div>
-                  ) : (
-                    <div className="space-y-3">
-                      {project.posts.map((post) => (
-                        <button
-                          key={post.id}
-                          type="button"
-                          onClick={() => openDetailModal(project.id, post.id)}
-                          className="block w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-left transition hover:border-gray-300 hover:shadow-sm"
-                        >
-                          <div className="space-y-2">
-                            <div className="text-xs text-gray-500">
-                              {post.date}
+                              <div className="font-extrabold text-gray-900">
+                                {post.title}
+                              </div>
+
+                              <div className="text-sm text-gray-600">
+                                {post.summary}
+                              </div>
                             </div>
 
-                            <div className="font-extrabold text-gray-900">
-                              {post.title}
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              {post.tags.map((tag) => (
+                                <span
+                                  key={tag}
+                                  className="rounded-full bg-gray-100 px-3 py-1 text-[11px] font-semibold text-gray-800"
+                                >
+                                  {tag}
+                                </span>
+                              ))}
                             </div>
-
-                            <div className="text-sm text-gray-600">
-                              {post.summary}
-                            </div>
-                          </div>
-
-                          <div className="mt-3 flex flex-wrap gap-2">
-                            {post.tags.map((tag) => (
-                              <span
-                                key={tag}
-                                className="rounded-full bg-gray-100 px-3 py-1 text-[11px] font-semibold text-gray-800"
-                              >
-                                {tag}
-                              </span>
-                            ))}
-                          </div>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ) : null}
-            </div>
-          );
-        })}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ) : null}
+              </div>
+            );
+          })
+        )}
       </section>
 
       {isCreateOpen ? (
@@ -491,7 +546,7 @@ export function DevlogWorkspaceView({ workspaceId }: { workspaceId: string }) {
             tagsText: "",
           }}
           submitLabel={submitting ? "저장 중..." : "저장"}
-          onClose={() => setIsCreateOpen(false)}
+          onClose={closeCreateModal}
           onSubmit={handleCreate}
         />
       ) : null}
@@ -499,7 +554,7 @@ export function DevlogWorkspaceView({ workspaceId }: { workspaceId: string }) {
       {isDetailOpen && selectedPostDetail ? (
         <PostDetailModal
           post={selectedPostDetail}
-          onClose={() => setIsDetailOpen(false)}
+          onClose={closeDetailModal}
           onEdit={openEditModal}
           onDelete={handleDelete}
           loading={detailLoading || submitting}
@@ -522,7 +577,7 @@ export function DevlogWorkspaceView({ workspaceId }: { workspaceId: string }) {
             tagsText: formatTags(selectedPostDetail.tags),
           }}
           submitLabel={submitting ? "저장 중..." : "저장"}
-          onClose={() => setIsEditOpen(false)}
+          onClose={closeEditModal}
           onSubmit={handleEdit}
         />
       ) : null}
@@ -707,11 +762,15 @@ function PostFormModal({
 }) {
   const [value, setValue] = useState<PostFormValue>(initialValue);
 
+  useEffect(() => {
+    setValue(initialValue);
+  }, [initialValue]);
+
   const canSave =
-    value.projectId.trim() &&
-    value.title.trim() &&
-    value.summary.trim() &&
-    value.content.trim();
+    !!value.projectId.trim() &&
+    !!value.title.trim() &&
+    !!value.summary.trim() &&
+    !!value.content.trim();
 
   return (
     <ModalShell
@@ -782,7 +841,7 @@ function PostFormModal({
         </div>
 
         <div>
-          <FieldLabel>상세 내용</FieldLabel>
+          <FieldLabel required>상세 내용</FieldLabel>
           <textarea
             value={value.content}
             onChange={(e) =>
