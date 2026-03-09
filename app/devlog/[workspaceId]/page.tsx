@@ -1,8 +1,6 @@
-// app/devlog/[solutionId]/page.tsx
-
 import { DevlogWorkspaceView } from "@/components/devlog/devlogWorkspaceView";
 
-export default async function DevlogSolutionPage({
+export default async function DevlogWorkspacePage({
   params,
 }: {
   params: Promise<{ workspaceId: string }>;

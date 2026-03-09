@@ -1,21 +1,16 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import {
-  ChevronDown,
-  ChevronRight,
-  Plus,
-  X,
-  Pencil,
-  Trash2,
-  CalendarDays,
-} from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { ChevronDown, ChevronRight, Plus, X, CalendarDays } from "lucide-react";
 import { DevlogListHeader } from "@/components/devlog/devlogHeader";
+
+const API_BASE = "http://localhost:8080";
+const USER_ID = "user-001";
 
 type Post = {
   id: string;
   title: string;
-  date: string; // YYYY-MM-DD
+  date: string;
   summary: string;
   content: string;
   tags: string[];
@@ -25,7 +20,7 @@ type Project = {
   id: string;
   title: string;
   tech: string;
-  lastUpdated: string; // YYYY.MM.DD
+  lastUpdated: string;
   posts: Post[];
 };
 
@@ -43,129 +38,94 @@ type PostFormValue = {
   tagsText: string;
 };
 
-const MOCK_DETAIL: Record<string, SolutionDetail> = {
-  s1: {
-    id: "s1",
-    name: "My Personal Solution",
-    projects: [
-      {
-        id: "p1",
-        title: "Portfolio Website",
-        tech: "TypeScript",
-        lastUpdated: "2026.01.05",
-        posts: [
-          {
-            id: "d1",
-            title: "프로젝트 초기 설정 및 환경 구성",
-            date: "2025-01-16",
-            summary: "개발 환경 설정 완료, React + TypeScript + Vite 스택 구성",
-            content:
-              "프로젝트 초기 설정 작업을 완료했습니다.\n\n주요 작업 내용:\n- React 18과 TypeScript 5.0 환경 구성\n- Vite 빌드 도구 설정\n- ESLint 및 Prettier 설정\n- Git 저장소 초기화\n\n이슈: TypeScript 설정 관련 경로 이슈가 있었으나 tsconfig.json의 paths 설정으로 해결했습니다.",
-            tags: ["Setup", "Configuration"],
-          },
-          {
-            id: "d2",
-            title: "API 엔드포인트 설계 및 문서화",
-            date: "2025-01-15",
-            summary: "RESTful API 구조 설계, 주요 엔드포인트 4개 정의",
-            content:
-              "RESTful API 구조를 설계했습니다.\n\n- 사용자/프로젝트/개발일지 기준 엔드포인트 설계\n- 상태 코드와 예외 응답 형식 정리\n- 프론트에서 테스트 가능한 구조로 문서화 진행",
-            tags: ["API", "Design"],
-          },
-        ],
-      },
-      {
-        id: "p2",
-        title: "VSIDE UI",
-        tech: "React",
-        lastUpdated: "2026.02.03",
-        posts: [
-          {
-            id: "d3",
-            title: "UI/UX 디자인 시스템 구축",
-            date: "2025-01-13",
-            summary: "컬러 팔레트, 타이포그래피, 컴포넌트 라이브러리 정의",
-            content:
-              "디자인 시스템 구축을 진행했습니다.\n\n- 메인/서브 컬러 팔레트 정의\n- 타이포 스케일 정리\n- 버튼, 입력창, 모달 컴포넌트 규격 정리",
-            tags: ["Design", "UI/UX"],
-          },
-        ],
-      },
-    ],
-  },
-
-  s2: {
-    id: "s2",
-    name: "Team Alpha Solution",
-    projects: [
-      {
-        id: "p3",
-        title: "Web IDE",
-        tech: "Next.js",
-        lastUpdated: "2026.02.06",
-        posts: [],
-      },
-      {
-        id: "p4",
-        title: "Sync Engine",
-        tech: "Yjs",
-        lastUpdated: "2026.02.05",
-        posts: [],
-      },
-      {
-        id: "p5",
-        title: "Docs",
-        tech: "MDX",
-        lastUpdated: "2026.02.04",
-        posts: [],
-      },
-    ],
-  },
+type ApiWorkspaceDetailResponse = {
+  uuid: string;
+  name: string;
+  mode: "personal" | "team";
+  teamName: string | null;
+  projects: ApiProjectDevlogGroupResponse[];
 };
 
-function todayYmd() {
-  const d = new Date();
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
+type ApiProjectDevlogGroupResponse = {
+  id: number;
+  name: string;
+  description: string;
+  language: string;
+  lastUpdatedDate: string;
+  devlogCount: number;
+  posts: ApiDevlogItemResponse[];
+};
 
-function uid(prefix = "d") {
-  return `${prefix}_${Math.random().toString(16).slice(2)}_${Date.now()}`;
-}
+type ApiDevlogItemResponse = {
+  id: number;
+  title: string;
+  date: string;
+  summary: string;
+  tags: string[];
+};
 
-function parseTags(text: string) {
-  return text
-    .split(",")
-    .map((t) => t.trim())
-    .filter(Boolean);
+type ApiDevlogDetailResponse = {
+  id: number;
+  workspaceId: string;
+  projectId: number;
+  title: string;
+  date: string;
+  summary: string;
+  content: string;
+  tags: string[];
+};
+
+function formatDate(dateString: string) {
+  if (!dateString) return "-";
+  return dateString.replaceAll("-", ".");
 }
 
 function formatTags(tags: string[]) {
   return tags.join(", ");
 }
 
-export function DevlogWorkspaceView({ workspaceId }: { workspaceId: string }) {
-  const initial = MOCK_DETAIL[workspaceId];
-  const [detail, setDetail] = useState<SolutionDetail | null>(initial ?? null);
+function mapWorkspaceDetail(data: ApiWorkspaceDetailResponse): SolutionDetail {
+  return {
+    id: data.uuid,
+    name: data.name,
+    projects: data.projects.map((project) => ({
+      id: String(project.id),
+      title: project.name,
+      tech: project.language,
+      lastUpdated: formatDate(project.lastUpdatedDate),
+      posts: project.posts.map((post) => ({
+        id: String(post.id),
+        title: post.title,
+        date: post.date,
+        summary: post.summary,
+        content: "",
+        tags: post.tags,
+      })),
+    })),
+  };
+}
 
+export function DevlogWorkspaceView({ workspaceId }: { workspaceId: string }) {
+  const [detail, setDetail] = useState<SolutionDetail | null>(null);
   const [openProjectIds, setOpenProjectIds] = useState<Record<string, boolean>>(
-    () => {
-      const init: Record<string, boolean> = {};
-      (initial?.projects ?? []).forEach((p) => {
-        init[p.id] = true;
-      });
-      return init;
-    },
+    {},
   );
 
   const [selectedProjectId, setSelectedProjectId] = useState<string>("");
   const [selectedPostId, setSelectedPostId] = useState<string>("");
 
+  const [selectedPostDetail, setSelectedPostDetail] = useState<Post | null>(
+    null,
+  );
+
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
+
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const projects = useMemo(() => detail?.projects ?? [], [detail]);
 
@@ -173,30 +133,94 @@ export function DevlogWorkspaceView({ workspaceId }: { workspaceId: string }) {
     return projects.find((p) => p.id === selectedProjectId) ?? null;
   }, [projects, selectedProjectId]);
 
-  const selectedPost = useMemo(() => {
-    if (!selectedProject) return null;
-    return (
-      selectedProject.posts.find((post) => post.id === selectedPostId) ?? null
+  const reloadWorkspaceDetail = async () => {
+    const res = await fetch(
+      `${API_BASE}/api/devlogs/workspaces/${workspaceId}`,
+      {
+        headers: {
+          "X-USER-ID": USER_ID,
+        },
+        cache: "no-store",
+      },
     );
-  }, [selectedProject, selectedPostId]);
 
-  if (!detail) {
-    return (
-      <div className="rounded-2xl border border-gray-200 bg-white px-5 py-10 text-center text-sm text-gray-500">
-        존재하지 않는 솔루션입니다.
-      </div>
-    );
-  }
+    if (!res.ok) {
+      throw new Error(`워크스페이스 상세 조회 실패 (${res.status})`);
+    }
+
+    const data: ApiWorkspaceDetailResponse = await res.json();
+    const mapped = mapWorkspaceDetail(data);
+
+    setDetail(mapped);
+    setOpenProjectIds((prev) => {
+      const next: Record<string, boolean> = {};
+      mapped.projects.forEach((project) => {
+        next[project.id] = prev[project.id] ?? true;
+      });
+      return next;
+    });
+  };
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        await reloadWorkspaceDetail();
+      } catch (err) {
+        console.error(err);
+        setError("개발일지 목록을 불러오지 못했습니다.");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    load();
+  }, [workspaceId]);
 
   const openCreateModal = () => {
-    setSelectedProjectId(detail.projects[0]?.id ?? "");
+    setSelectedProjectId(detail?.projects[0]?.id ?? "");
     setIsCreateOpen(true);
   };
 
-  const openDetailModal = (projectId: string, postId: string) => {
-    setSelectedProjectId(projectId);
-    setSelectedPostId(postId);
-    setIsDetailOpen(true);
+  const openDetailModal = async (projectId: string, postId: string) => {
+    try {
+      setDetailLoading(true);
+      setSelectedProjectId(projectId);
+      setSelectedPostId(postId);
+
+      const res = await fetch(
+        `${API_BASE}/api/devlogs/workspaces/${workspaceId}/projects/${projectId}/posts/${postId}`,
+        {
+          headers: {
+            "X-USER-ID": USER_ID,
+          },
+          cache: "no-store",
+        },
+      );
+
+      if (!res.ok) {
+        throw new Error(`개발일지 상세 조회 실패 (${res.status})`);
+      }
+
+      const data: ApiDevlogDetailResponse = await res.json();
+
+      setSelectedPostDetail({
+        id: String(data.id),
+        title: data.title,
+        date: data.date,
+        summary: data.summary,
+        content: data.content,
+        tags: data.tags ?? [],
+      });
+
+      setIsDetailOpen(true);
+    } catch (err) {
+      console.error(err);
+      alert("개발일지 상세를 불러오지 못했습니다.");
+    } finally {
+      setDetailLoading(false);
+    }
   };
 
   const openEditModal = () => {
@@ -204,90 +228,130 @@ export function DevlogWorkspaceView({ workspaceId }: { workspaceId: string }) {
     setIsEditOpen(true);
   };
 
-  const handleCreate = (value: PostFormValue) => {
-    const newPost: Post = {
-      id: uid(),
-      title: value.title.trim(),
-      summary: value.summary.trim(),
-      content: value.content.trim(),
-      date: todayYmd(),
-      tags: parseTags(value.tagsText),
-    };
+  const handleCreate = async (value: PostFormValue) => {
+    try {
+      setSubmitting(true);
 
-    setDetail((prev) => {
-      if (!prev) return prev;
-      return {
-        ...prev,
-        projects: prev.projects.map((project) =>
-          project.id === value.projectId
-            ? {
-                ...project,
-                posts: [newPost, ...project.posts],
-              }
-            : project,
-        ),
-      };
-    });
-
-    setOpenProjectIds((prev) => ({
-      ...prev,
-      [value.projectId]: true,
-    }));
-
-    setIsCreateOpen(false);
-  };
-
-  const handleEdit = (value: PostFormValue) => {
-    if (!selectedPost) return;
-
-    setDetail((prev) => {
-      if (!prev) return prev;
-      return {
-        ...prev,
-        projects: prev.projects.map((project) => {
-          if (project.id !== selectedProjectId) return project;
-
-          return {
-            ...project,
-            posts: project.posts.map((post) =>
-              post.id === selectedPost.id
-                ? {
-                    ...post,
-                    title: value.title.trim(),
-                    summary: value.summary.trim(),
-                    content: value.content.trim(),
-                    tags: parseTags(value.tagsText),
-                  }
-                : post,
-            ),
-          };
+      const res = await fetch(`${API_BASE}/api/devlogs`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-USER-ID": USER_ID,
+        },
+        body: JSON.stringify({
+          workspaceId,
+          projectId: Number(value.projectId),
+          title: value.title.trim(),
+          summary: value.summary.trim(),
+          content: value.content.trim(),
+          tagsText: value.tagsText.trim(),
         }),
-      };
-    });
+      });
 
-    setIsEditOpen(false);
+      if (!res.ok) {
+        throw new Error(`개발일지 작성 실패 (${res.status})`);
+      }
+
+      await reloadWorkspaceDetail();
+      setOpenProjectIds((prev) => ({
+        ...prev,
+        [value.projectId]: true,
+      }));
+      setIsCreateOpen(false);
+    } catch (err) {
+      console.error(err);
+      alert("개발일지 작성에 실패했습니다.");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
-  const handleDelete = () => {
-    if (!selectedPost) return;
+  const handleEdit = async (value: PostFormValue) => {
+    if (!selectedPostDetail) return;
+
+    try {
+      setSubmitting(true);
+
+      const res = await fetch(
+        `${API_BASE}/api/devlogs/${selectedPostDetail.id}`,
+        {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            "X-USER-ID": USER_ID,
+          },
+          body: JSON.stringify({
+            workspaceId,
+            projectId: Number(value.projectId),
+            title: value.title.trim(),
+            summary: value.summary.trim(),
+            content: value.content.trim(),
+            tagsText: value.tagsText.trim(),
+          }),
+        },
+      );
+
+      if (!res.ok) {
+        throw new Error(`개발일지 수정 실패 (${res.status})`);
+      }
+
+      await reloadWorkspaceDetail();
+      setIsEditOpen(false);
+    } catch (err) {
+      console.error(err);
+      alert("개발일지 수정에 실패했습니다.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!selectedPostDetail) return;
     if (!confirm("이 개발일지를 삭제할까요?")) return;
 
-    setDetail((prev) => {
-      if (!prev) return prev;
-      return {
-        ...prev,
-        projects: prev.projects.map((project) => {
-          if (project.id !== selectedProjectId) return project;
-          return {
-            ...project,
-            posts: project.posts.filter((post) => post.id !== selectedPost.id),
-          };
-        }),
-      };
-    });
+    try {
+      setSubmitting(true);
 
-    setIsDetailOpen(false);
+      const res = await fetch(
+        `${API_BASE}/api/devlogs/${selectedPostDetail.id}?workspaceId=${workspaceId}&projectId=${selectedProjectId}`,
+        {
+          method: "DELETE",
+          headers: {
+            "X-USER-ID": USER_ID,
+          },
+        },
+      );
+
+      if (!res.ok) {
+        throw new Error(`개발일지 삭제 실패 (${res.status})`);
+      }
+
+      await reloadWorkspaceDetail();
+      setIsDetailOpen(false);
+      setSelectedPostDetail(null);
+    } catch (err) {
+      console.error(err);
+      alert("개발일지 삭제에 실패했습니다.");
+    } finally {
+      setSubmitting(false);
+    }
   };
+
+  if (loading) {
+    return (
+      <div className="rounded-2xl border border-gray-200 bg-white px-5 py-10 text-center text-sm text-gray-500">
+        개발일지 목록을 불러오는 중입니다...
+      </div>
+    );
+  }
+
+  if (error || !detail) {
+    return (
+      <div className="rounded-2xl border border-gray-200 bg-white px-5 py-10 text-center text-sm text-gray-500">
+        {error ?? "존재하지 않는 워크스페이스입니다."}
+      </div>
+    );
+  }
 
   return (
     <>
@@ -426,22 +490,23 @@ export function DevlogWorkspaceView({ workspaceId }: { workspaceId: string }) {
             content: "",
             tagsText: "",
           }}
-          submitLabel="저장"
+          submitLabel={submitting ? "저장 중..." : "저장"}
           onClose={() => setIsCreateOpen(false)}
           onSubmit={handleCreate}
         />
       ) : null}
 
-      {isDetailOpen && selectedPost ? (
+      {isDetailOpen && selectedPostDetail ? (
         <PostDetailModal
-          post={selectedPost}
+          post={selectedPostDetail}
           onClose={() => setIsDetailOpen(false)}
           onEdit={openEditModal}
           onDelete={handleDelete}
+          loading={detailLoading || submitting}
         />
       ) : null}
 
-      {isEditOpen && selectedPost ? (
+      {isEditOpen && selectedPostDetail ? (
         <PostFormModal
           title="개발일지 수정"
           subtitle="일지 내용을 수정하세요"
@@ -451,12 +516,12 @@ export function DevlogWorkspaceView({ workspaceId }: { workspaceId: string }) {
           }))}
           initialValue={{
             projectId: selectedProjectId,
-            title: selectedPost.title,
-            summary: selectedPost.summary,
-            content: selectedPost.content,
-            tagsText: formatTags(selectedPost.tags),
+            title: selectedPostDetail.title,
+            summary: selectedPostDetail.summary,
+            content: selectedPostDetail.content,
+            tagsText: formatTags(selectedPostDetail.tags),
           }}
-          submitLabel="저장"
+          submitLabel={submitting ? "저장 중..." : "저장"}
           onClose={() => setIsEditOpen(false)}
           onSubmit={handleEdit}
         />
@@ -494,7 +559,6 @@ function ModalShell({
             "shadow-[0_18px_48px_rgba(15,23,42,0.16)]",
           ].join(" ")}
         >
-          {/* header */}
           <div className="shrink-0 flex items-start justify-between border-b border-[#ECEEF2] px-5 py-4">
             <div>
               <h2 className="text-[24px] font-extrabold leading-none tracking-[-0.02em] text-[#111827]">
@@ -516,12 +580,10 @@ function ModalShell({
             </button>
           </div>
 
-          {/* body */}
           <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
             {children}
           </div>
 
-          {/* footer */}
           {footer ? (
             <div className="shrink-0 flex justify-end gap-2 border-t border-[#ECEEF2] bg-white px-5 py-3">
               {footer}
@@ -532,16 +594,19 @@ function ModalShell({
     </div>
   );
 }
+
 function PostDetailModal({
   post,
   onClose,
   onEdit,
   onDelete,
+  loading,
 }: {
   post: Post;
   onClose: () => void;
   onEdit: () => void;
   onDelete: () => void;
+  loading?: boolean;
 }) {
   return (
     <ModalShell
@@ -553,14 +618,16 @@ function PostDetailModal({
           <button
             type="button"
             onClick={onEdit}
-            className="inline-flex h-10 items-center justify-center rounded-xl border border-[#E5E7EB] bg-white px-4 text-sm font-semibold text-[#374151] transition hover:bg-[#F9FAFB]"
+            disabled={loading}
+            className="inline-flex h-10 items-center justify-center rounded-xl border border-[#E5E7EB] bg-white px-4 text-sm font-semibold text-[#374151] transition hover:bg-[#F9FAFB] disabled:cursor-not-allowed disabled:opacity-60"
           >
             수정
           </button>
           <button
             type="button"
             onClick={onDelete}
-            className="inline-flex h-10 items-center justify-center rounded-xl border border-[#F3D1D1] bg-white px-4 text-sm font-semibold text-[#EF4444] transition hover:bg-[#FEF2F2]"
+            disabled={loading}
+            className="inline-flex h-10 items-center justify-center rounded-xl border border-[#F3D1D1] bg-white px-4 text-sm font-semibold text-[#EF4444] transition hover:bg-[#FEF2F2] disabled:cursor-not-allowed disabled:opacity-60"
           >
             삭제
           </button>
@@ -667,7 +734,7 @@ function PostFormModal({
             onClick={() => onSubmit(value)}
             className="inline-flex h-10 items-center justify-center rounded-xl bg-[#111827] px-4 text-sm font-semibold text-white transition hover:bg-[#0B1220] disabled:cursor-not-allowed disabled:bg-[#9CA3AF]"
           >
-            저장
+            {submitLabel}
           </button>
         </>
       }

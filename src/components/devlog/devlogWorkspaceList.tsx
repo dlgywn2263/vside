@@ -1,52 +1,100 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import { ChevronRight, UserRound, UsersRound } from "lucide-react";
 
 type SolutionMode = "personal" | "team";
 
-type Solution = {
-  id: string;
+type WorkspaceItem = {
+  uuid: string;
   name: string;
   mode: SolutionMode;
-  teamName?: string;
-  lastUpdated: string; // YYYY.MM.DD
+  teamName: string | null;
+  lastUpdatedDate: string;
   projectCount: number;
 };
 
-const MOCK_SOLUTIONS: Solution[] = [
-  {
-    id: "s1",
-    name: "My Personal Solution",
-    mode: "personal",
-    lastUpdated: "2026.02.06",
-    projectCount: 2,
-  },
-  {
-    id: "s2",
-    name: "Team Alpha Solution",
-    mode: "team",
-    teamName: "Team Alpha",
-    lastUpdated: "2026.02.06",
-    projectCount: 3,
-  },
-];
+const API_BASE = "http://localhost:8080";
+const USER_ID = "user-001";
+
+function formatDate(dateString: string) {
+  if (!dateString) return "-";
+  return dateString.replaceAll("-", ".");
+}
 
 export function DevlogWorkspaceList() {
+  const [workspaces, setWorkspaces] = useState<WorkspaceItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const loadWorkspaces = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+
+        const res = await fetch(`${API_BASE}/api/devlogs/workspaces`, {
+          headers: {
+            "X-USER-ID": USER_ID,
+          },
+          cache: "no-store",
+        });
+
+        if (!res.ok) {
+          throw new Error(`워크스페이스 목록 조회 실패 (${res.status})`);
+        }
+
+        const data: WorkspaceItem[] = await res.json();
+        setWorkspaces(data);
+      } catch (err) {
+        console.error(err);
+        setError("개발일지 워크스페이스 목록을 불러오지 못했습니다.");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadWorkspaces();
+  }, []);
+
+  if (loading) {
+    return (
+      <section className="rounded-2xl border border-gray-200 bg-white px-5 py-6 text-sm text-gray-500">
+        워크스페이스 목록을 불러오는 중입니다...
+      </section>
+    );
+  }
+
+  if (error) {
+    return (
+      <section className="rounded-2xl border border-red-200 bg-red-50 px-5 py-6 text-sm text-red-600">
+        {error}
+      </section>
+    );
+  }
+
+  if (workspaces.length === 0) {
+    return (
+      <section className="rounded-2xl border border-gray-200 bg-white px-5 py-6 text-sm text-gray-500">
+        표시할 워크스페이스가 없습니다.
+      </section>
+    );
+  }
+
   return (
     <section className="space-y-3">
-      {MOCK_SOLUTIONS.map((s) => {
+      {workspaces.map((s) => {
         const isTeam = s.mode === "team";
 
         return (
           <Link
-            key={s.id}
-            href={`/devlog/${s.id}`}
+            key={s.uuid}
+            href={`/devlog/${s.uuid}`}
             className="w-full rounded-2xl border border-gray-200 bg-white px-5 py-4
                        hover:shadow-sm hover:border-gray-300 transition
                        flex items-center justify-between gap-4"
           >
-            {/* 왼쪽 */}
             <div className="flex items-center gap-4 min-w-[320px]">
               <div
                 className={[
@@ -86,7 +134,7 @@ export function DevlogWorkspaceList() {
                 <div className="mt-1 text-xs text-gray-500">
                   최근 수정:{" "}
                   <span className="font-semibold text-gray-800">
-                    {s.lastUpdated}
+                    {formatDate(s.lastUpdatedDate)}
                   </span>
                   <span className="mx-2 text-gray-300">·</span>
                   프로젝트{" "}
@@ -97,7 +145,6 @@ export function DevlogWorkspaceList() {
               </div>
             </div>
 
-            {/* 오른쪽 */}
             <ChevronRight size={22} className="text-gray-900" />
           </Link>
         );
