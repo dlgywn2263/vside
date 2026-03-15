@@ -1,41 +1,61 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ChevronDown, ChevronRight, Plus, X, CalendarDays } from "lucide-react";
-import { DevlogListHeader } from "@/components/devlog/devlogHeader";
+import {
+  CalendarDays,
+  ChevronLeft,
+  ChevronRight,
+  FileText,
+  Pencil,
+  Plus,
+  Search,
+  Trash2,
+  X,
+} from "lucide-react";
 
 const API_BASE = "http://localhost:8080";
-const USER_ID = "user-001";
 
-type Post = {
+type StageType = "planning" | "implementation" | "wrapup";
+
+type DevlogItem = {
   id: string;
-  title: string;
-  date: string;
-  summary: string;
-  content: string;
-  tags: string[];
-};
-
-type Project = {
-  id: string;
-  title: string;
-  tech: string;
-  lastUpdated: string;
-  posts: Post[];
-};
-
-type SolutionDetail = {
-  id: string;
-  name: string;
-  projects: Project[];
-};
-
-type PostFormValue = {
+  workspaceId: string;
   projectId: string;
+  projectTitle: string;
   title: string;
   summary: string;
   content: string;
-  tagsText: string;
+  date: string;
+  tags: string[];
+  stage: StageType;
+  goal?: string;
+  issue?: string;
+  solution?: string;
+  nextPlan?: string;
+  commitHash?: string;
+  progress?: number;
+};
+
+type ApiDevlogResponse = {
+  id: string;
+  title: string;
+  summary: string;
+  content: string;
+  date: string;
+  tags: string[];
+  stage?: StageType;
+  goal?: string;
+  issue?: string;
+  solution?: string;
+  nextPlan?: string;
+  commitHash?: string;
+  progress?: number;
+};
+
+type ApiProjectDevlogGroupResponse = {
+  projectId: string;
+  projectTitle: string;
+  posts: ApiDevlogResponse[];
 };
 
 type ApiWorkspaceDetailResponse = {
@@ -46,842 +66,1091 @@ type ApiWorkspaceDetailResponse = {
   projects: ApiProjectDevlogGroupResponse[];
 };
 
-type ApiProjectDevlogGroupResponse = {
-  id: number;
-  name: string;
-  description: string;
-  language: string;
-  lastUpdatedDate: string;
-  devlogCount: number;
-  posts: ApiDevlogItemResponse[];
-};
-
-type ApiDevlogItemResponse = {
-  id: number;
+type FormValue = {
+  projectId: string;
   title: string;
-  date: string;
-  summary: string;
-  tags: string[];
-};
-
-type ApiDevlogDetailResponse = {
-  id: number;
-  workspaceId: string;
-  projectId: number;
-  title: string;
-  date: string;
   summary: string;
   content: string;
-  tags: string[];
+  date: string;
+  tagsText: string;
+  stage: StageType;
+  goal: string;
+  issue: string;
+  solution: string;
+  nextPlan: string;
+  commitHash: string;
+  progress: string;
 };
 
-function formatDate(dateString: string) {
-  if (!dateString) return "-";
-  return dateString.replaceAll("-", ".");
-}
+const stageMeta: Record<StageType, { label: string; description: string }> = {
+  planning: {
+    label: "기획",
+    description: "요구사항 정리, 설계, 구조화",
+  },
+  implementation: {
+    label: "구현",
+    description: "기능 개발, 테스트, 적용",
+  },
+  wrapup: {
+    label: "마무리",
+    description: "리팩토링, 문서화, 점검",
+  },
+};
 
-function formatTags(tags: string[]) {
-  return tags.join(", ");
-}
-
-function mapWorkspaceDetail(data: ApiWorkspaceDetailResponse): SolutionDetail {
-  return {
-    id: data.uuid,
-    name: data.name,
-    projects: data.projects.map((project) => ({
-      id: String(project.id),
-      title: project.name,
-      tech: project.language,
-      lastUpdated: formatDate(project.lastUpdatedDate),
-      posts: project.posts.map((post) => ({
-        id: String(post.id),
-        title: post.title,
-        date: post.date,
-        summary: post.summary,
-        content: "",
-        tags: post.tags ?? [],
-      })),
-    })),
-  };
-}
+const emptyForm: FormValue = {
+  projectId: "",
+  title: "",
+  summary: "",
+  content: "",
+  date: todayYmd(),
+  tagsText: "",
+  stage: "planning",
+  goal: "",
+  issue: "",
+  solution: "",
+  nextPlan: "",
+  commitHash: "",
+  progress: "0",
+};
 
 export function DevlogWorkspaceView({ workspaceId }: { workspaceId: string }) {
-  const [detail, setDetail] = useState<SolutionDetail | null>(null);
-  const [openProjectIds, setOpenProjectIds] = useState<Record<string, boolean>>(
-    {},
-  );
+  const [workspaceName, setWorkspaceName] = useState("프로젝트 관리");
+  const [workspaceModeLabel, setWorkspaceModeLabel] = useState("워크스페이스");
 
-  const [selectedProjectId, setSelectedProjectId] = useState<string>("");
-  const [selectedPostId, setSelectedPostId] = useState<string>("");
+  const [logs, setLogs] = useState<DevlogItem[]>([]);
+  const [projects, setProjects] = useState<{ id: string; title: string }[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const [selectedPostDetail, setSelectedPostDetail] = useState<Post | null>(
-    null,
-  );
-
-  const [isCreateOpen, setIsCreateOpen] = useState(false);
-  const [isDetailOpen, setIsDetailOpen] = useState(false);
-  const [isEditOpen, setIsEditOpen] = useState(false);
-
-  const [keyword, setKeyword] = useState("");
-  const [debouncedKeyword, setDebouncedKeyword] = useState("");
+  const [search, setSearch] = useState("");
+  const [selectedStage, setSelectedStage] = useState<StageType | "all">("all");
+  const [selectedTag, setSelectedTag] = useState("all");
   const [sort, setSort] = useState<"latest" | "oldest">("latest");
 
-  const [loading, setLoading] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
-  const [detailLoading, setDetailLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [calendarMonth, setCalendarMonth] = useState(startOfMonth(new Date()));
+  const [selectedDate, setSelectedDate] = useState(todayYmd());
 
-  const projects = useMemo(() => detail?.projects ?? [], [detail]);
-
-  const visiblePostCount = useMemo(() => {
-    return projects.reduce((acc, project) => acc + project.posts.length, 0);
-  }, [projects]);
+  const [detailTarget, setDetailTarget] = useState<DevlogItem | null>(null);
+  const [editingTarget, setEditingTarget] = useState<DevlogItem | null>(null);
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [form, setForm] = useState<FormValue>(emptyForm);
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedKeyword(keyword.trim());
-    }, 300);
+    loadWorkspace();
+  }, [workspaceId]);
 
-    return () => clearTimeout(timer);
-  }, [keyword]);
+  async function loadWorkspace() {
+    setLoading(true);
 
-  const reloadWorkspaceDetail = async (
-    qValue = debouncedKeyword,
-    sortValue = sort,
-  ) => {
-    const params = new URLSearchParams();
-
-    if (qValue) {
-      params.set("q", qValue);
-    }
-    params.set("sort", sortValue);
-
-    const queryString = params.toString();
-    const url = queryString
-      ? `${API_BASE}/api/devlogs/workspaces/${workspaceId}?${queryString}`
-      : `${API_BASE}/api/devlogs/workspaces/${workspaceId}`;
-
-    const res = await fetch(url, {
-      headers: {
-        "X-USER-ID": USER_ID,
-      },
-      cache: "no-store",
-    });
-
-    if (!res.ok) {
-      throw new Error(`워크스페이스 상세 조회 실패 (${res.status})`);
-    }
-
-    const data: ApiWorkspaceDetailResponse = await res.json();
-    const mapped = mapWorkspaceDetail(data);
-
-    setDetail(mapped);
-    setOpenProjectIds((prev) => {
-      const next: Record<string, boolean> = {};
-      mapped.projects.forEach((project) => {
-        next[project.id] = prev[project.id] ?? true;
-      });
-      return next;
-    });
-  };
-
-  useEffect(() => {
-    const load = async () => {
-      try {
-        setLoading(true);
-        setError(null);
-        await reloadWorkspaceDetail(debouncedKeyword, sort);
-      } catch (err) {
-        console.error(err);
-        setError("개발일지 목록을 불러오지 못했습니다.");
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    load();
-  }, [workspaceId, debouncedKeyword, sort]);
-
-  const openCreateModal = () => {
-    setSelectedProjectId(detail?.projects[0]?.id ?? "");
-    setIsCreateOpen(true);
-  };
-
-  const closeCreateModal = () => {
-    setIsCreateOpen(false);
-  };
-
-  const closeDetailModal = () => {
-    setIsDetailOpen(false);
-  };
-
-  const closeEditModal = () => {
-    setIsEditOpen(false);
-  };
-
-  const openDetailModal = async (projectId: string, postId: string) => {
     try {
-      setDetailLoading(true);
-      setSelectedProjectId(projectId);
-      setSelectedPostId(postId);
-
       const res = await fetch(
-        `${API_BASE}/api/devlogs/workspaces/${workspaceId}/projects/${projectId}/posts/${postId}`,
+        `${API_BASE}/api/devlogs/workspaces/${workspaceId}`,
         {
-          headers: {
-            "X-USER-ID": USER_ID,
-          },
           cache: "no-store",
         },
       );
 
       if (!res.ok) {
-        throw new Error(`개발일지 상세 조회 실패 (${res.status})`);
+        throw new Error("워크스페이스 개발일지 조회 실패");
       }
 
-      const data: ApiDevlogDetailResponse = await res.json();
+      const data: ApiWorkspaceDetailResponse = await res.json();
 
-      setSelectedPostDetail({
-        id: String(data.id),
-        title: data.title,
-        date: data.date,
-        summary: data.summary,
-        content: data.content,
-        tags: data.tags ?? [],
-      });
+      setWorkspaceName(data.name);
+      setWorkspaceModeLabel(
+        data.mode === "team"
+          ? data.teamName || "팀 워크스페이스"
+          : "개인 워크스페이스",
+      );
 
-      setIsDetailOpen(true);
-    } catch (err) {
-      console.error(err);
-      alert("개발일지 상세를 불러오지 못했습니다.");
-    } finally {
-      setDetailLoading(false);
-    }
-  };
-
-  const openEditModal = () => {
-    setIsDetailOpen(false);
-    setIsEditOpen(true);
-  };
-
-  const handleCreate = async (value: PostFormValue) => {
-    try {
-      setSubmitting(true);
-
-      const res = await fetch(`${API_BASE}/api/devlogs`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-USER-ID": USER_ID,
-        },
-        body: JSON.stringify({
-          workspaceId,
-          projectId: Number(value.projectId),
-          title: value.title.trim(),
-          summary: value.summary.trim(),
-          content: value.content.trim(),
-          tagsText: value.tagsText.trim(),
-        }),
-      });
-
-      if (!res.ok) {
-        throw new Error(`개발일지 작성 실패 (${res.status})`);
-      }
-
-      await reloadWorkspaceDetail();
-      setOpenProjectIds((prev) => ({
-        ...prev,
-        [value.projectId]: true,
+      const mappedProjects = data.projects.map((project) => ({
+        id: project.projectId,
+        title: project.projectTitle,
       }));
-      setIsCreateOpen(false);
-    } catch (err) {
-      console.error(err);
-      alert("개발일지 작성에 실패했습니다.");
-    } finally {
-      setSubmitting(false);
-    }
-  };
+      setProjects(mappedProjects);
 
-  const handleEdit = async (value: PostFormValue) => {
-    if (!selectedPostDetail) return;
+      const flattenedLogs: DevlogItem[] = data.projects.flatMap((project) =>
+        project.posts.map((post) => ({
+          id: post.id,
+          workspaceId: data.uuid,
+          projectId: project.projectId,
+          projectTitle: project.projectTitle,
+          title: post.title,
+          summary: post.summary,
+          content: post.content,
+          date: normalizeDate(post.date),
+          tags: post.tags ?? [],
+          stage:
+            post.stage ?? inferStage(post.title, post.summary, post.tags ?? []),
+          goal: post.goal ?? "",
+          issue: post.issue ?? "",
+          solution: post.solution ?? "",
+          nextPlan: post.nextPlan ?? "",
+          commitHash: post.commitHash ?? "",
+          progress: post.progress ?? 0,
+        })),
+      );
+
+      setLogs(flattenedLogs);
+
+      const today = todayYmd();
+      const hasToday = flattenedLogs.some((item) => item.date === today);
+
+      if (hasToday) {
+        setSelectedDate(today);
+      } else if (flattenedLogs.length > 0) {
+        setSelectedDate(flattenedLogs[0].date);
+      } else {
+        setSelectedDate(today);
+      }
+    } catch (error) {
+      console.error(error);
+      alert("개발일지 데이터를 불러오지 못했습니다.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const allTags = useMemo(() => {
+    const tagSet = new Set<string>();
+    logs.forEach((log) => {
+      log.tags.forEach((tag) => tagSet.add(tag));
+    });
+    return ["all", ...Array.from(tagSet)];
+  }, [logs]);
+
+  const filteredLogs = useMemo(() => {
+    const keyword = search.trim().toLowerCase();
+
+    const next = logs.filter((log) => {
+      const text = [
+        log.title,
+        log.summary,
+        log.content,
+        log.projectTitle,
+        log.goal ?? "",
+        log.issue ?? "",
+        log.solution ?? "",
+        log.nextPlan ?? "",
+        ...(log.tags ?? []),
+      ]
+        .join(" ")
+        .toLowerCase();
+
+      const matchesKeyword = !keyword || text.includes(keyword);
+      const matchesStage =
+        selectedStage === "all" || log.stage === selectedStage;
+      const matchesTag =
+        selectedTag === "all" || log.tags.includes(selectedTag);
+
+      return matchesKeyword && matchesStage && matchesTag;
+    });
+
+    next.sort((a, b) => {
+      return sort === "latest"
+        ? b.date.localeCompare(a.date)
+        : a.date.localeCompare(b.date);
+    });
+
+    return next;
+  }, [logs, search, selectedStage, selectedTag, sort]);
+
+  const logsByStage = useMemo(() => {
+    return {
+      planning: filteredLogs.filter((log) => log.stage === "planning"),
+      implementation: filteredLogs.filter(
+        (log) => log.stage === "implementation",
+      ),
+      wrapup: filteredLogs.filter((log) => log.stage === "wrapup"),
+    };
+  }, [filteredLogs]);
+
+  const selectedDateLogs = useMemo(() => {
+    return filteredLogs.filter((log) => log.date === selectedDate);
+  }, [filteredLogs, selectedDate]);
+
+  const markedDates = useMemo(() => {
+    return new Set(filteredLogs.map((item) => item.date));
+  }, [filteredLogs]);
+
+  const monthGrid = useMemo(() => {
+    return buildCalendarGrid(calendarMonth);
+  }, [calendarMonth]);
+
+  function openCreateModal(defaultStage?: StageType) {
+    setEditingTarget(null);
+    setForm({
+      ...emptyForm,
+      projectId: projects[0]?.id ?? "",
+      date: selectedDate || todayYmd(),
+      stage: defaultStage ?? "planning",
+    });
+    setIsCreateOpen(true);
+  }
+
+  function openEditModal(item: DevlogItem) {
+    setIsCreateOpen(false);
+    setEditingTarget(item);
+    setForm({
+      projectId: item.projectId,
+      title: item.title,
+      summary: item.summary,
+      content: item.content,
+      date: item.date,
+      tagsText: item.tags.join(", "),
+      stage: item.stage,
+      goal: item.goal ?? "",
+      issue: item.issue ?? "",
+      solution: item.solution ?? "",
+      nextPlan: item.nextPlan ?? "",
+      commitHash: item.commitHash ?? "",
+      progress: String(item.progress ?? 0),
+    });
+  }
+
+  function closeFormModal() {
+    setIsCreateOpen(false);
+    setEditingTarget(null);
+    setForm(emptyForm);
+  }
+
+  async function handleSubmit() {
+    const payload = {
+      projectId: form.projectId,
+      title: form.title.trim(),
+      summary: form.summary.trim(),
+      content: form.content.trim(),
+      date: form.date,
+      tags: form.tagsText
+        .split(",")
+        .map((v) => v.trim())
+        .filter(Boolean),
+      stage: form.stage,
+      goal: form.goal.trim(),
+      issue: form.issue.trim(),
+      solution: form.solution.trim(),
+      nextPlan: form.nextPlan.trim(),
+      commitHash: form.commitHash.trim(),
+      progress: Number(form.progress || 0),
+    };
+
+    if (!payload.projectId || !payload.title || !payload.content) {
+      alert("프로젝트, 제목, 상세 내용은 필수입니다.");
+      return;
+    }
 
     try {
-      setSubmitting(true);
-
-      const res = await fetch(
-        `${API_BASE}/api/devlogs/${selectedPostDetail.id}`,
-        {
+      if (editingTarget) {
+        const res = await fetch(`${API_BASE}/api/devlogs/${editingTarget.id}`, {
           method: "PUT",
           headers: {
             "Content-Type": "application/json",
-            "X-USER-ID": USER_ID,
           },
-          body: JSON.stringify({
-            workspaceId,
-            projectId: Number(value.projectId),
-            title: value.title.trim(),
-            summary: value.summary.trim(),
-            content: value.content.trim(),
-            tagsText: value.tagsText.trim(),
-          }),
-        },
-      );
+          body: JSON.stringify(payload),
+        });
 
-      if (!res.ok) {
-        throw new Error(`개발일지 수정 실패 (${res.status})`);
-      }
-
-      await reloadWorkspaceDetail();
-      setSelectedProjectId(value.projectId);
-      setIsEditOpen(false);
-    } catch (err) {
-      console.error(err);
-      alert("개발일지 수정에 실패했습니다.");
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const handleDelete = async () => {
-    if (!selectedPostDetail) return;
-    if (!confirm("이 개발일지를 삭제할까요?")) return;
-
-    try {
-      setSubmitting(true);
-
-      const res = await fetch(
-        `${API_BASE}/api/devlogs/${selectedPostDetail.id}?workspaceId=${workspaceId}&projectId=${selectedProjectId}`,
-        {
-          method: "DELETE",
+        if (!res.ok) {
+          throw new Error("수정 실패");
+        }
+      } else {
+        const res = await fetch(`${API_BASE}/api/devlogs`, {
+          method: "POST",
           headers: {
-            "X-USER-ID": USER_ID,
+            "Content-Type": "application/json",
           },
-        },
-      );
+          body: JSON.stringify(payload),
+        });
 
-      if (!res.ok) {
-        throw new Error(`개발일지 삭제 실패 (${res.status})`);
+        if (!res.ok) {
+          throw new Error("생성 실패");
+        }
       }
 
-      await reloadWorkspaceDetail();
-      setIsDetailOpen(false);
-      setSelectedPostDetail(null);
-      setSelectedPostId("");
-    } catch (err) {
-      console.error(err);
-      alert("개발일지 삭제에 실패했습니다.");
-    } finally {
-      setSubmitting(false);
+      await loadWorkspace();
+      closeFormModal();
+    } catch (error) {
+      console.error(error);
+      alert("저장 중 오류가 발생했습니다.");
     }
-  };
-
-  if (loading) {
-    return (
-      <div className="rounded-2xl border border-gray-200 bg-white px-5 py-10 text-center text-sm text-gray-500">
-        개발일지 목록을 불러오는 중입니다...
-      </div>
-    );
   }
 
-  if (error || !detail) {
-    return (
-      <div className="rounded-2xl border border-gray-200 bg-white px-5 py-10 text-center text-sm text-gray-500">
-        {error ?? "존재하지 않는 워크스페이스입니다."}
-      </div>
-    );
+  async function handleDelete(id: string) {
+    const ok = window.confirm("이 개발일지를 삭제할까요?");
+    if (!ok) return;
+
+    try {
+      const res = await fetch(`${API_BASE}/api/devlogs/${id}`, {
+        method: "DELETE",
+      });
+
+      if (!res.ok) {
+        throw new Error("삭제 실패");
+      }
+
+      if (detailTarget?.id === id) {
+        setDetailTarget(null);
+      }
+
+      await loadWorkspace();
+    } catch (error) {
+      console.error(error);
+      alert("삭제 중 오류가 발생했습니다.");
+    }
   }
 
   return (
-    <>
-      <div className="flex items-start justify-between gap-4">
+    <div className="space-y-6">
+      <header className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="mt-1 text-3xl font-extrabold text-gray-900">
-            개발일지
+          <h1 className="text-3xl font-bold tracking-tight text-slate-900">
+            프로젝트 관리
           </h1>
-          <p className="mt-1 text-sm text-gray-500">
-            <span className="font-semibold text-gray-800">{detail.name}</span> ·
-            프로젝트별 개발일지를 확인합니다
+          <p className="mt-1 text-sm text-slate-500">
+            {workspaceName} · {workspaceModeLabel}의 개발일지를 단계와 일정
+            기준으로 관리합니다.
           </p>
         </div>
 
         <button
-          type="button"
-          onClick={openCreateModal}
-          className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+          onClick={() => openCreateModal()}
+          className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-800"
         >
-          <Plus size={16} />새 일지 작성
+          <Plus size={16} />새 개발일지
         </button>
-      </div>
+      </header>
 
-      <DevlogListHeader
-        keyword={keyword}
-        sort={sort}
-        onKeywordChange={setKeyword}
-        onSortChange={setSort}
-      />
-
-      <div className="text-sm text-gray-500">
-        검색 결과{" "}
-        <span className="font-semibold text-gray-800">{visiblePostCount}</span>
-        개
-      </div>
-
-      <section className="space-y-4">
-        {projects.length === 0 ? (
-          <div className="rounded-2xl border border-gray-200 bg-white px-5 py-10 text-center text-sm text-gray-500">
-            검색 결과가 없습니다.
-          </div>
-        ) : (
-          projects.map((project) => {
-            const isOpen = openProjectIds[project.id] ?? true;
-
-            return (
-              <div
-                key={project.id}
-                className="rounded-2xl border border-gray-200 bg-white"
-              >
-                <button
-                  type="button"
-                  onClick={() =>
-                    setOpenProjectIds((prev) => ({
-                      ...prev,
-                      [project.id]: !isOpen,
-                    }))
-                  }
-                  className="w-full rounded-2xl px-5 py-4 text-left hover:bg-gray-50"
-                >
-                  <div className="flex items-center justify-between gap-4">
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-3 flex-wrap">
-                        <div className="text-sm font-bold text-gray-900">
-                          {project.title}
-                        </div>
-                        <span className="rounded-full border border-gray-200 bg-gray-50 px-3 py-1 text-xs font-semibold text-gray-700">
-                          {project.tech}
-                        </span>
-                      </div>
-
-                      <div className="mt-1 text-xs text-gray-500">
-                        최근 수정 날짜:{" "}
-                        <span className="font-semibold text-gray-800">
-                          {project.lastUpdated}
-                        </span>
-                        <span className="mx-2 text-gray-300">·</span>
-                        개발일지 {project.posts.length}개
-                      </div>
-                    </div>
-
-                    {isOpen ? (
-                      <ChevronDown size={20} className="text-gray-700" />
-                    ) : (
-                      <ChevronRight size={20} className="text-gray-700" />
-                    )}
-                  </div>
-                </button>
-
-                {isOpen ? (
-                  <div className="px-5 pb-5 pt-1">
-                    {project.posts.length === 0 ? (
-                      <div className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-4 text-sm text-gray-500">
-                        개발일지가 없습니다.
-                      </div>
-                    ) : (
-                      <div className="space-y-3">
-                        {project.posts.map((post) => (
-                          <button
-                            key={post.id}
-                            type="button"
-                            onClick={() => openDetailModal(project.id, post.id)}
-                            className="block w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-left transition hover:border-gray-300 hover:shadow-sm"
-                          >
-                            <div className="space-y-2">
-                              <div className="text-xs text-gray-500">
-                                {post.date}
-                              </div>
-
-                              <div className="font-extrabold text-gray-900">
-                                {post.title}
-                              </div>
-
-                              <div className="text-sm text-gray-600">
-                                {post.summary}
-                              </div>
-                            </div>
-
-                            <div className="mt-3 flex flex-wrap gap-2">
-                              {post.tags.map((tag) => (
-                                <span
-                                  key={tag}
-                                  className="rounded-full bg-gray-100 px-3 py-1 text-[11px] font-semibold text-gray-800"
-                                >
-                                  {tag}
-                                </span>
-                              ))}
-                            </div>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                ) : null}
-              </div>
-            );
-          })
-        )}
-      </section>
-
-      {isCreateOpen ? (
-        <PostFormModal
-          title="새 개발일지 작성"
-          subtitle="오늘의 개발 내용을 기록하세요"
-          projects={projects.map((project) => ({
-            id: project.id,
-            title: project.title,
-          }))}
-          initialValue={{
-            projectId: selectedProjectId || projects[0]?.id || "",
-            title: "",
-            summary: "",
-            content: "",
-            tagsText: "",
-          }}
-          submitLabel={submitting ? "저장 중..." : "저장"}
-          onClose={closeCreateModal}
-          onSubmit={handleCreate}
-        />
-      ) : null}
-
-      {isDetailOpen && selectedPostDetail ? (
-        <PostDetailModal
-          post={selectedPostDetail}
-          onClose={closeDetailModal}
-          onEdit={openEditModal}
-          onDelete={handleDelete}
-          loading={detailLoading || submitting}
-        />
-      ) : null}
-
-      {isEditOpen && selectedPostDetail ? (
-        <PostFormModal
-          title="개발일지 수정"
-          subtitle="일지 내용을 수정하세요"
-          projects={projects.map((project) => ({
-            id: project.id,
-            title: project.title,
-          }))}
-          initialValue={{
-            projectId: selectedProjectId,
-            title: selectedPostDetail.title,
-            summary: selectedPostDetail.summary,
-            content: selectedPostDetail.content,
-            tagsText: formatTags(selectedPostDetail.tags),
-          }}
-          submitLabel={submitting ? "저장 중..." : "저장"}
-          onClose={closeEditModal}
-          onSubmit={handleEdit}
-        />
-      ) : null}
-    </>
-  );
-}
-
-function ModalShell({
-  title,
-  subtitle,
-  children,
-  footer,
-  onClose,
-  maxWidth = "max-w-[680px]",
-}: {
-  title: string;
-  subtitle?: string;
-  children: React.ReactNode;
-  footer?: React.ReactNode;
-  onClose: () => void;
-  maxWidth?: string;
-}) {
-  return (
-    <div className="fixed inset-0 z-50 bg-black/35">
-      <div className="flex min-h-screen items-center justify-center p-4 sm:p-6">
-        <div
-          className={[
-            "w-full",
-            maxWidth,
-            "max-h-[85vh]",
-            "flex flex-col",
-            "overflow-hidden",
-            "rounded-[18px] border border-[#E5E7EB] bg-white",
-            "shadow-[0_18px_48px_rgba(15,23,42,0.16)]",
-          ].join(" ")}
-        >
-          <div className="shrink-0 flex items-start justify-between border-b border-[#ECEEF2] px-5 py-4">
-            <div>
-              <h2 className="text-[24px] font-extrabold leading-none tracking-[-0.02em] text-[#111827]">
-                {title}
-              </h2>
-              {subtitle ? (
-                <p className="mt-2 text-[14px] leading-5 text-[#6B7280]">
-                  {subtitle}
-                </p>
-              ) : null}
-            </div>
-
-            <button
-              type="button"
-              onClick={onClose}
-              className="mt-0.5 grid h-8 w-8 place-items-center rounded-lg text-[#6B7280] transition hover:bg-[#F3F4F6] hover:text-[#111827]"
-            >
-              <X size={17} />
-            </button>
-          </div>
-
-          <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
-            {children}
-          </div>
-
-          {footer ? (
-            <div className="shrink-0 flex justify-end gap-2 border-t border-[#ECEEF2] bg-white px-5 py-3">
-              {footer}
-            </div>
-          ) : null}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function PostDetailModal({
-  post,
-  onClose,
-  onEdit,
-  onDelete,
-  loading,
-}: {
-  post: Post;
-  onClose: () => void;
-  onEdit: () => void;
-  onDelete: () => void;
-  loading?: boolean;
-}) {
-  return (
-    <ModalShell
-      title="개발일지 상세"
-      onClose={onClose}
-      maxWidth="max-w-[760px]"
-      footer={
-        <>
-          <button
-            type="button"
-            onClick={onEdit}
-            disabled={loading}
-            className="inline-flex h-10 items-center justify-center rounded-xl border border-[#E5E7EB] bg-white px-4 text-sm font-semibold text-[#374151] transition hover:bg-[#F9FAFB] disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            수정
-          </button>
-          <button
-            type="button"
-            onClick={onDelete}
-            disabled={loading}
-            className="inline-flex h-10 items-center justify-center rounded-xl border border-[#F3D1D1] bg-white px-4 text-sm font-semibold text-[#EF4444] transition hover:bg-[#FEF2F2] disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            삭제
-          </button>
-        </>
-      }
-    >
-      <div className="space-y-5">
-        <section>
-          <div className="text-sm font-medium text-[#9CA3AF]">제목</div>
-          <div className="mt-2 text-[20px] font-extrabold leading-7 tracking-[-0.01em] text-[#111827]">
-            {post.title}
-          </div>
-        </section>
-
-        <section className="grid grid-cols-1 gap-5 border-b border-[#ECEEF2] pb-5 sm:grid-cols-2">
-          <div>
-            <div className="text-sm font-medium text-[#9CA3AF]">작성일</div>
-            <div className="mt-2 flex items-center gap-2 text-[15px] font-medium text-[#111827]">
-              <CalendarDays size={16} className="text-[#6B7280]" />
-              <span>{post.date}</span>
+      <section className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="grid gap-3 md:grid-cols-4">
+          <div className="md:col-span-2">
+            <div className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2">
+              <Search size={16} className="text-slate-400" />
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="제목, 요약, 내용, 태그 검색"
+                className="w-full bg-transparent text-sm outline-none placeholder:text-slate-400"
+              />
             </div>
           </div>
-        </section>
 
-        <section>
-          <div className="text-sm font-medium text-[#9CA3AF]">요약</div>
-          <div className="mt-2 text-[15px] leading-7 text-[#374151]">
-            {post.summary}
-          </div>
-        </section>
-
-        <section>
-          <div className="text-sm font-medium text-[#9CA3AF]">내용</div>
-          <div className="mt-3 rounded-2xl bg-[#FAFAFB] px-4 py-4 text-[15px] leading-7 text-[#111827]">
-            <pre className="whitespace-pre-wrap font-sans">
-              {post.content || "-"}
-            </pre>
-          </div>
-        </section>
-
-        {post.tags.length > 0 ? (
-          <section>
-            <div className="mb-3 text-sm font-medium text-[#9CA3AF]">태그</div>
-            <div className="flex flex-wrap gap-2">
-              {post.tags.map((tag) => (
-                <span
-                  key={tag}
-                  className="rounded-full bg-[#F3F4F6] px-3 py-1.5 text-[11px] font-semibold text-[#374151]"
-                >
-                  {tag}
-                </span>
-              ))}
-            </div>
-          </section>
-        ) : null}
-      </div>
-    </ModalShell>
-  );
-}
-
-function PostFormModal({
-  title,
-  subtitle,
-  projects,
-  initialValue,
-  submitLabel,
-  onClose,
-  onSubmit,
-}: {
-  title: string;
-  subtitle?: string;
-  projects: Array<{ id: string; title: string }>;
-  initialValue: PostFormValue;
-  submitLabel: string;
-  onClose: () => void;
-  onSubmit: (value: PostFormValue) => void;
-}) {
-  const [value, setValue] = useState<PostFormValue>(initialValue);
-
-  useEffect(() => {
-    setValue(initialValue);
-  }, [initialValue]);
-
-  const canSave =
-    !!value.projectId.trim() &&
-    !!value.title.trim() &&
-    !!value.summary.trim() &&
-    !!value.content.trim();
-
-  return (
-    <ModalShell
-      title={title}
-      subtitle={subtitle}
-      onClose={onClose}
-      maxWidth="max-w-[640px]"
-      footer={
-        <>
-          <button
-            type="button"
-            onClick={onClose}
-            className="inline-flex h-10 items-center justify-center rounded-xl border border-[#E5E7EB] bg-white px-4 text-sm font-semibold text-[#374151] transition hover:bg-[#F9FAFB]"
-          >
-            취소
-          </button>
-          <button
-            type="button"
-            disabled={!canSave}
-            onClick={() => onSubmit(value)}
-            className="inline-flex h-10 items-center justify-center rounded-xl bg-[#111827] px-4 text-sm font-semibold text-white transition hover:bg-[#0B1220] disabled:cursor-not-allowed disabled:bg-[#9CA3AF]"
-          >
-            {submitLabel}
-          </button>
-        </>
-      }
-    >
-      <div className="space-y-4">
-        <div>
-          <FieldLabel required>프로젝트</FieldLabel>
           <select
-            value={value.projectId}
+            value={selectedStage}
             onChange={(e) =>
-              setValue((prev) => ({ ...prev, projectId: e.target.value }))
+              setSelectedStage(e.target.value as StageType | "all")
             }
-            className="h-11 w-full rounded-xl border border-[#E5E7EB] bg-[#F7F7FA] px-4 text-sm text-[#111827] outline-none transition focus:border-[#D1D5DB] focus:bg-white focus:ring-2 focus:ring-[#E5E7EB]"
+            className="rounded-2xl border border-slate-200 px-3 py-2 text-sm outline-none"
           >
-            {projects.map((project) => (
-              <option key={project.id} value={project.id}>
-                {project.title}
+            <option value="all">전체 단계</option>
+            <option value="planning">기획</option>
+            <option value="implementation">구현</option>
+            <option value="wrapup">마무리</option>
+          </select>
+
+          <select
+            value={selectedTag}
+            onChange={(e) => setSelectedTag(e.target.value)}
+            className="rounded-2xl border border-slate-200 px-3 py-2 text-sm outline-none"
+          >
+            {allTags.map((tag) => (
+              <option key={tag} value={tag}>
+                {tag === "all" ? "전체 태그" : tag}
               </option>
             ))}
           </select>
         </div>
 
-        <div>
-          <FieldLabel required>제목</FieldLabel>
-          <input
-            value={value.title}
-            onChange={(e) =>
-              setValue((prev) => ({ ...prev, title: e.target.value }))
-            }
-            placeholder="예: 사용자 인증 기능 구현"
-            className="h-11 w-full rounded-xl border border-[#E5E7EB] bg-[#F7F7FA] px-4 text-sm text-[#111827] placeholder:text-[#9CA3AF] outline-none transition focus:border-[#D1D5DB] focus:bg-white focus:ring-2 focus:ring-[#E5E7EB]"
-          />
-        </div>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <button
+            onClick={() => setSort("latest")}
+            className={`rounded-full px-3 py-1.5 text-xs font-medium ${
+              sort === "latest"
+                ? "bg-slate-900 text-white"
+                : "bg-slate-100 text-slate-600"
+            }`}
+          >
+            최신순
+          </button>
+          <button
+            onClick={() => setSort("oldest")}
+            className={`rounded-full px-3 py-1.5 text-xs font-medium ${
+              sort === "oldest"
+                ? "bg-slate-900 text-white"
+                : "bg-slate-100 text-slate-600"
+            }`}
+          >
+            오래된순
+          </button>
 
-        <div>
-          <FieldLabel required>요약</FieldLabel>
-          <input
-            value={value.summary}
-            onChange={(e) =>
-              setValue((prev) => ({ ...prev, summary: e.target.value }))
-            }
-            placeholder="한 줄로 요약해주세요"
-            className="h-11 w-full rounded-xl border border-[#E5E7EB] bg-[#F7F7FA] px-4 text-sm text-[#111827] placeholder:text-[#9CA3AF] outline-none transition focus:border-[#D1D5DB] focus:bg-white focus:ring-2 focus:ring-[#E5E7EB]"
-          />
+          {(search || selectedStage !== "all" || selectedTag !== "all") && (
+            <button
+              onClick={() => {
+                setSearch("");
+                setSelectedStage("all");
+                setSelectedTag("all");
+                setSort("latest");
+              }}
+              className="rounded-full px-3 py-1.5 text-xs font-medium text-slate-500 hover:bg-slate-100"
+            >
+              필터 초기화
+            </button>
+          )}
         </div>
+      </section>
 
-        <div>
-          <FieldLabel required>상세 내용</FieldLabel>
-          <textarea
-            value={value.content}
-            onChange={(e) =>
-              setValue((prev) => ({ ...prev, content: e.target.value }))
-            }
-            placeholder="작업 내용, 주요 변경사항, 이슈 및 해결방법, 다음 단계 등을 작성하세요..."
-            className="min-h-[120px] w-full rounded-xl border border-[#E5E7EB] bg-[#F7F7FA] px-4 py-3 text-sm leading-6 text-[#111827] placeholder:text-[#9CA3AF] outline-none transition focus:border-[#D1D5DB] focus:bg-white focus:ring-2 focus:ring-[#E5E7EB]"
-          />
-          <div className="mt-2 text-xs text-[#9CA3AF]">
-            {value.content.length} / 5000자
+      {loading ? (
+        <div className="rounded-3xl border border-slate-200 bg-white p-10 text-center text-sm text-slate-500">
+          개발일지를 불러오는 중...
+        </div>
+      ) : (
+        <div className="grid gap-6 xl:grid-cols-[460px_minmax(0,1fr)]">
+          <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="mb-5 flex items-center justify-between">
+              <div>
+                <h2 className="text-2xl font-bold text-slate-900">개발일지</h2>
+              </div>
+              <CalendarDays className="text-slate-400" size={20} />
+            </div>
+
+            <div className="rounded-2xl bg-slate-50 p-4">
+              <div className="mb-4 flex items-center justify-between">
+                <button
+                  onClick={() => setCalendarMonth(addMonths(calendarMonth, -1))}
+                  className="rounded-lg p-2 hover:bg-white"
+                >
+                  <ChevronLeft size={18} />
+                </button>
+
+                <div className="text-sm font-semibold text-slate-800">
+                  {calendarMonth.toLocaleDateString("en-US", {
+                    year: "numeric",
+                    month: "long",
+                  })}
+                </div>
+
+                <button
+                  onClick={() => setCalendarMonth(addMonths(calendarMonth, 1))}
+                  className="rounded-lg p-2 hover:bg-white"
+                >
+                  <ChevronRight size={18} />
+                </button>
+              </div>
+
+              <div className="grid grid-cols-7 gap-y-2 text-center text-xs text-slate-400">
+                {["일", "월", "화", "수", "목", "금", "토"].map((day) => (
+                  <div key={day} className="py-2 font-medium">
+                    {day}
+                  </div>
+                ))}
+
+                {monthGrid.map((cell, idx) => {
+                  const isCurrentMonth =
+                    cell.getMonth() === calendarMonth.getMonth();
+                  const ymd = toYmd(cell);
+                  const isSelected = ymd === selectedDate;
+                  const hasLog = markedDates.has(ymd);
+
+                  return (
+                    <button
+                      key={`${ymd}-${idx}`}
+                      onClick={() => setSelectedDate(ymd)}
+                      className={`relative mx-auto flex h-10 w-10 items-center justify-center rounded-full text-sm transition ${
+                        isSelected
+                          ? "bg-slate-900 text-white"
+                          : isCurrentMonth
+                            ? "text-slate-700 hover:bg-white"
+                            : "text-slate-300 hover:bg-white"
+                      }`}
+                    >
+                      {cell.getDate()}
+                      {hasLog && !isSelected && (
+                        <span className="absolute bottom-1 h-1.5 w-1.5 rounded-full bg-slate-900" />
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="mt-6">
+              <div className="mb-3 text-sm font-semibold text-slate-700">
+                {formatKoreanDate(selectedDate)} 개발일지
+              </div>
+
+              <div className="space-y-3">
+                {selectedDateLogs.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-400">
+                    선택한 날짜의 개발일지가 없습니다.
+                  </div>
+                ) : (
+                  selectedDateLogs.map((log) => (
+                    <div
+                      key={log.id}
+                      className="rounded-2xl border border-slate-200 bg-slate-50 p-4"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div
+                          className="min-w-0 cursor-pointer"
+                          onClick={() => setDetailTarget(log)}
+                        >
+                          <div className="text-sm font-semibold text-slate-900">
+                            {log.title}
+                          </div>
+                          <div className="mt-1 text-xs text-slate-500">
+                            {log.projectTitle}
+                          </div>
+                          <div className="mt-2 line-clamp-2 text-xs text-slate-600">
+                            {log.summary}
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-1">
+                          <button
+                            onClick={() => openEditModal(log)}
+                            className="rounded-lg p-2 text-slate-500 hover:bg-white"
+                          >
+                            <Pencil size={15} />
+                          </button>
+                          <button
+                            onClick={() => handleDelete(log.id)}
+                            className="rounded-lg p-2 text-slate-500 hover:bg-white"
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-medium text-slate-600">
+                          {stageMeta[log.stage].label}
+                        </span>
+                        {log.tags.map((tag) => (
+                          <span
+                            key={tag}
+                            className="rounded-full bg-white px-2.5 py-1 text-[11px] text-slate-500"
+                          >
+                            #{tag}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  ))
+                )}
+
+                <button
+                  onClick={() => openCreateModal()}
+                  className="flex w-full items-center justify-center gap-2 rounded-2xl border border-dashed border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-500 hover:bg-slate-50"
+                >
+                  <Plus size={16} />새 개발일지 작성
+                </button>
+              </div>
+            </div>
+          </section>
+
+          <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="grid gap-4 lg:grid-cols-3">
+              {(["planning", "implementation", "wrapup"] as StageType[]).map(
+                (stage) => (
+                  <div key={stage} className="rounded-2xl bg-slate-50 p-4">
+                    <div className="mb-4">
+                      <div className="text-xl font-bold text-slate-900">
+                        {stageMeta[stage].label}
+                      </div>
+                      <div className="mt-1 text-xs text-slate-500">
+                        {stageMeta[stage].description}
+                      </div>
+                    </div>
+
+                    <div className="space-y-3">
+                      {logsByStage[stage].length === 0 ? (
+                        <div className="rounded-2xl border border-dashed border-slate-200 bg-white px-3 py-6 text-center text-xs text-slate-400">
+                          해당 단계의 개발일지가 없습니다.
+                        </div>
+                      ) : (
+                        logsByStage[stage].map((log) => (
+                          <div
+                            key={log.id}
+                            className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-100"
+                          >
+                            <button
+                              onClick={() => setDetailTarget(log)}
+                              className="block w-full text-left"
+                            >
+                              <div className="text-xs font-semibold text-slate-400">
+                                {shortDate(log.date)}
+                              </div>
+                              <div className="mt-1 line-clamp-2 text-base font-bold text-slate-900">
+                                {log.title}
+                              </div>
+                              <div className="mt-1 line-clamp-2 text-sm text-slate-500">
+                                {log.summary}
+                              </div>
+                            </button>
+
+                            <div className="mt-3 text-xs text-slate-400">
+                              {log.projectTitle}
+                            </div>
+
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              {log.tags.map((tag) => (
+                                <span
+                                  key={tag}
+                                  className="rounded-full bg-slate-50 px-2 py-1 text-[11px] text-slate-500"
+                                >
+                                  #{tag}
+                                </span>
+                              ))}
+                            </div>
+
+                            <div className="mt-4 flex items-center justify-between">
+                              <div className="text-[11px] text-slate-400">
+                                진행률 {log.progress ?? 0}%
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <button
+                                  onClick={() => openEditModal(log)}
+                                  className="rounded-lg p-2 text-slate-500 hover:bg-slate-50"
+                                >
+                                  <Pencil size={14} />
+                                </button>
+                                <button
+                                  onClick={() => handleDelete(log.id)}
+                                  className="rounded-lg p-2 text-slate-500 hover:bg-slate-50"
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        ))
+                      )}
+
+                      <button
+                        onClick={() => openCreateModal(stage)}
+                        className="flex w-full items-center justify-center gap-2 rounded-2xl border border-dashed border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-500 hover:bg-slate-50"
+                      >
+                        <Plus size={16} />
+                        {stageMeta[stage].label} 일지 추가
+                      </button>
+                    </div>
+                  </div>
+                ),
+              )}
+            </div>
+          </section>
+        </div>
+      )}
+
+      {detailTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
+          <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-3xl bg-white p-6 shadow-2xl">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <div className="text-sm text-slate-400">
+                  {detailTarget.projectTitle} ·{" "}
+                  {formatKoreanDate(detailTarget.date)}
+                </div>
+                <h3 className="mt-1 text-2xl font-bold text-slate-900">
+                  {detailTarget.title}
+                </h3>
+
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">
+                    {stageMeta[detailTarget.stage].label}
+                  </span>
+                  {detailTarget.tags.map((tag) => (
+                    <span
+                      key={tag}
+                      className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-500"
+                    >
+                      #{tag}
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              <button
+                onClick={() => setDetailTarget(null)}
+                className="rounded-xl p-2 hover:bg-slate-100"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="mt-6 grid gap-4 md:grid-cols-2">
+              <InfoBlock title="요약" value={detailTarget.summary} />
+              <InfoBlock
+                title="진행률"
+                value={`${detailTarget.progress ?? 0}%`}
+              />
+              <InfoBlock title="목표" value={detailTarget.goal} />
+              <InfoBlock title="문제 상황" value={detailTarget.issue} />
+              <InfoBlock title="해결 방법" value={detailTarget.solution} />
+              <InfoBlock title="다음 계획" value={detailTarget.nextPlan} />
+              <InfoBlock
+                title="커밋 해시 / 브랜치"
+                value={detailTarget.commitHash}
+                mono
+              />
+            </div>
+
+            <div className="mt-6 rounded-2xl border border-slate-200 p-5">
+              <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700">
+                <FileText size={16} />
+                상세 내용
+              </div>
+              <div className="whitespace-pre-wrap text-sm leading-7 text-slate-700">
+                {detailTarget.content}
+              </div>
+            </div>
+
+            <div className="mt-6 flex justify-end gap-2">
+              <button
+                onClick={() => {
+                  const item = detailTarget;
+                  setDetailTarget(null);
+                  openEditModal(item);
+                }}
+                className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              >
+                수정
+              </button>
+              <button
+                onClick={() => handleDelete(detailTarget.id)}
+                className="rounded-xl bg-red-500 px-4 py-2 text-sm font-medium text-white hover:bg-red-600"
+              >
+                삭제
+              </button>
+            </div>
           </div>
         </div>
+      )}
 
-        <div>
-          <FieldLabel>태그</FieldLabel>
-          <input
-            value={value.tagsText}
-            onChange={(e) =>
-              setValue((prev) => ({ ...prev, tagsText: e.target.value }))
-            }
-            placeholder="예: API, Design, UI/UX"
-            className="h-11 w-full rounded-xl border border-[#E5E7EB] bg-[#F7F7FA] px-4 text-sm text-[#111827] placeholder:text-[#9CA3AF] outline-none transition focus:border-[#D1D5DB] focus:bg-white focus:ring-2 focus:ring-[#E5E7EB]"
-          />
+      {(isCreateOpen || editingTarget) && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
+          <div className="max-h-[92vh] w-full max-w-4xl overflow-y-auto rounded-3xl bg-white p-6 shadow-2xl">
+            <div className="mb-6 flex items-start justify-between">
+              <div>
+                <h3 className="text-2xl font-bold text-slate-900">
+                  {editingTarget ? "개발일지 수정" : "새 개발일지 작성"}
+                </h3>
+                <p className="mt-1 text-sm text-slate-500">
+                  기존 CRUD 흐름은 유지하고, 단계/일정 중심으로 더 풍부하게
+                  기록할 수 있도록 구성했습니다.
+                </p>
+              </div>
+
+              <button
+                onClick={closeFormModal}
+                className="rounded-xl p-2 hover:bg-slate-100"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <Field label="프로젝트">
+                <select
+                  value={form.projectId}
+                  onChange={(e) =>
+                    setForm((prev) => ({ ...prev, projectId: e.target.value }))
+                  }
+                  className="h-11 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none"
+                >
+                  <option value="">프로젝트 선택</option>
+                  {projects.map((project) => (
+                    <option key={project.id} value={project.id}>
+                      {project.title}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+
+              <Field label="단계">
+                <select
+                  value={form.stage}
+                  onChange={(e) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      stage: e.target.value as StageType,
+                    }))
+                  }
+                  className="h-11 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none"
+                >
+                  <option value="planning">기획</option>
+                  <option value="implementation">구현</option>
+                  <option value="wrapup">마무리</option>
+                </select>
+              </Field>
+
+              <Field label="제목" className="md:col-span-2">
+                <input
+                  value={form.title}
+                  onChange={(e) =>
+                    setForm((prev) => ({ ...prev, title: e.target.value }))
+                  }
+                  placeholder="예: 로그인 API 구현"
+                  className="h-11 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none"
+                />
+              </Field>
+
+              <Field label="날짜">
+                <input
+                  type="date"
+                  value={form.date}
+                  onChange={(e) =>
+                    setForm((prev) => ({ ...prev, date: e.target.value }))
+                  }
+                  className="h-11 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none"
+                />
+              </Field>
+
+              <Field label="진행률">
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  value={form.progress}
+                  onChange={(e) =>
+                    setForm((prev) => ({ ...prev, progress: e.target.value }))
+                  }
+                  placeholder="0~100"
+                  className="h-11 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none"
+                />
+              </Field>
+
+              <Field label="요약" className="md:col-span-2">
+                <input
+                  value={form.summary}
+                  onChange={(e) =>
+                    setForm((prev) => ({ ...prev, summary: e.target.value }))
+                  }
+                  placeholder="한 줄 요약"
+                  className="h-11 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none"
+                />
+              </Field>
+
+              <Field label="태그" className="md:col-span-2">
+                <input
+                  value={form.tagsText}
+                  onChange={(e) =>
+                    setForm((prev) => ({ ...prev, tagsText: e.target.value }))
+                  }
+                  placeholder="React, API, UI"
+                  className="h-11 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none"
+                />
+              </Field>
+
+              <Field label="목표">
+                <textarea
+                  value={form.goal}
+                  onChange={(e) =>
+                    setForm((prev) => ({ ...prev, goal: e.target.value }))
+                  }
+                  placeholder="오늘 작업 목표"
+                  className="min-h-[110px] w-full rounded-xl border border-slate-200 px-3 py-3 text-sm outline-none"
+                />
+              </Field>
+
+              <Field label="문제 상황">
+                <textarea
+                  value={form.issue}
+                  onChange={(e) =>
+                    setForm((prev) => ({ ...prev, issue: e.target.value }))
+                  }
+                  placeholder="막혔던 점, 에러, 고민"
+                  className="min-h-[110px] w-full rounded-xl border border-slate-200 px-3 py-3 text-sm outline-none"
+                />
+              </Field>
+
+              <Field label="해결 방법">
+                <textarea
+                  value={form.solution}
+                  onChange={(e) =>
+                    setForm((prev) => ({ ...prev, solution: e.target.value }))
+                  }
+                  placeholder="해결한 방식, 수정 포인트"
+                  className="min-h-[110px] w-full rounded-xl border border-slate-200 px-3 py-3 text-sm outline-none"
+                />
+              </Field>
+
+              <Field label="다음 계획">
+                <textarea
+                  value={form.nextPlan}
+                  onChange={(e) =>
+                    setForm((prev) => ({ ...prev, nextPlan: e.target.value }))
+                  }
+                  placeholder="다음 개발 예정 사항"
+                  className="min-h-[110px] w-full rounded-xl border border-slate-200 px-3 py-3 text-sm outline-none"
+                />
+              </Field>
+
+              <Field label="커밋 해시 / 브랜치" className="md:col-span-2">
+                <input
+                  value={form.commitHash}
+                  onChange={(e) =>
+                    setForm((prev) => ({ ...prev, commitHash: e.target.value }))
+                  }
+                  placeholder="예: feat/devlog-board, a1b2c3d"
+                  className="h-11 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none"
+                />
+              </Field>
+
+              <Field label="상세 내용" className="md:col-span-2">
+                <textarea
+                  value={form.content}
+                  onChange={(e) =>
+                    setForm((prev) => ({ ...prev, content: e.target.value }))
+                  }
+                  placeholder="구현 내용, 테스트 결과, 회고 등을 자세히 작성"
+                  className="min-h-[240px] w-full rounded-xl border border-slate-200 px-3 py-3 text-sm outline-none"
+                />
+              </Field>
+            </div>
+
+            <div className="mt-6 flex justify-end gap-2">
+              <button
+                onClick={closeFormModal}
+                className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              >
+                취소
+              </button>
+              <button
+                onClick={handleSubmit}
+                className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
+              >
+                {editingTarget ? "수정 저장" : "작성 완료"}
+              </button>
+            </div>
+          </div>
         </div>
-      </div>
-    </ModalShell>
+      )}
+    </div>
   );
 }
 
-function FieldLabel({
+function Field({
+  label,
   children,
-  required,
+  className = "",
 }: {
+  label: string;
   children: React.ReactNode;
-  required?: boolean;
+  className?: string;
 }) {
   return (
-    <label className="mb-2 block text-sm font-semibold text-[#111827]">
+    <div className={className}>
+      <label className="mb-2 block text-sm font-semibold text-slate-700">
+        {label}
+      </label>
       {children}
-      {required ? <span className="ml-1 text-[#111827]">*</span> : null}
-    </label>
+    </div>
   );
+}
+
+function InfoBlock({
+  title,
+  value,
+  mono = false,
+}: {
+  title: string;
+  value?: string | number;
+  mono?: boolean;
+}) {
+  return (
+    <div className="rounded-2xl border border-slate-200 p-4">
+      <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+        {title}
+      </div>
+      <div
+        className={`mt-2 whitespace-pre-wrap text-sm text-slate-700 ${
+          mono ? "font-mono" : ""
+        }`}
+      >
+        {String(value || "-")}
+      </div>
+    </div>
+  );
+}
+
+function inferStage(title: string, summary: string, tags: string[]): StageType {
+  const source = `${title} ${summary} ${tags.join(" ")}`.toLowerCase();
+
+  if (
+    source.includes("기획") ||
+    source.includes("설계") ||
+    source.includes("erd") ||
+    source.includes("주제")
+  ) {
+    return "planning";
+  }
+
+  if (
+    source.includes("정리") ||
+    source.includes("문서") ||
+    source.includes("리팩토링") ||
+    source.includes("마무리")
+  ) {
+    return "wrapup";
+  }
+
+  return "implementation";
+}
+
+function normalizeDate(input: string) {
+  if (!input) return todayYmd();
+  if (input.includes("T")) return input.slice(0, 10);
+  return input;
+}
+
+function todayYmd() {
+  return toYmd(new Date());
+}
+
+function toYmd(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function startOfMonth(date: Date) {
+  return new Date(date.getFullYear(), date.getMonth(), 1);
+}
+
+function addMonths(date: Date, amount: number) {
+  return new Date(date.getFullYear(), date.getMonth() + amount, 1);
+}
+
+function buildCalendarGrid(monthDate: Date) {
+  const firstDay = new Date(monthDate.getFullYear(), monthDate.getMonth(), 1);
+  const lastDay = new Date(
+    monthDate.getFullYear(),
+    monthDate.getMonth() + 1,
+    0,
+  );
+
+  const start = new Date(firstDay);
+  start.setDate(firstDay.getDate() - firstDay.getDay());
+
+  const end = new Date(lastDay);
+  end.setDate(lastDay.getDate() + (6 - lastDay.getDay()));
+
+  const result: Date[] = [];
+  const cursor = new Date(start);
+
+  while (cursor <= end) {
+    result.push(new Date(cursor));
+    cursor.setDate(cursor.getDate() + 1);
+  }
+
+  return result;
+}
+
+function shortDate(ymd: string) {
+  const [, month, day] = ymd.split("-");
+  return `${month}.${day}`;
+}
+
+function formatKoreanDate(ymd: string) {
+  const [year, month, day] = ymd.split("-");
+  return `${year}.${month}.${day}`;
 }

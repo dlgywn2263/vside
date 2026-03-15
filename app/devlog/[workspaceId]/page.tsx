@@ -8,8 +8,8 @@ export default async function DevlogWorkspacePage({
   const { workspaceId } = await params;
 
   return (
-    <main className="bg-white">
-      <div className="mx-auto max-w-6xl px-6 py-10 space-y-6">
+    <main className="bg-[#f6f7fb] min-h-screen">
+      <div className="mx-auto max-w-7xl px-6 py-8">
         <DevlogWorkspaceView workspaceId={workspaceId} />
       </div>
     </main>
