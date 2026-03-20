@@ -1,12 +1,24 @@
-// 일정관리 도메인 타입(Mode/Team/Event 등)을 모아두는 파일
-
+export type Category = "Work" | "Meeting" | "Study" | "Etc";
 export type Mode = "personal" | "team";
-export type Category = "Work" | "School" | "Personal" | "Meeting" | "Etc";
+export type EventStatus = "Todo" | "InProgress" | "Done";
+
+export type ProjectStage =
+  | "Planning"
+  | "Design"
+  | "Development"
+  | "Finalization";
+
+export type ProjectRole = "Frontend" | "Backend" | "Designer" | "Fullstack";
+
+export type Member = {
+  id: string;
+  name: string;
+};
 
 export type Team = {
   id: string;
   name: string;
-  members: { id: string; name: string }[];
+  members: Member[];
 };
 
 export type CalendarEvent = {
@@ -19,12 +31,35 @@ export type CalendarEvent = {
   location?: string;
   category: Category;
 
-  dateISO: string; // yyyy-MM-dd
-  startTime: string; // HH:mm
-  endTime?: string;
+  startDateISO: string;
+  endDateISO: string;
 
   assignees?: string[];
+
+  stage?: ProjectStage;
+  role?: ProjectRole;
+  status?: EventStatus;
 
   createdAt: number;
   updatedAt: number;
 };
+
+export const PROJECT_STAGES: ProjectStage[] = [
+  "Planning",
+  "Design",
+  "Development",
+  "Finalization",
+];
+
+export const PROJECT_ROLES: ProjectRole[] = [
+  "Frontend",
+  "Backend",
+  "Designer",
+  "Fullstack",
+];
+
+export const EVENT_STATUSES: EventStatus[] = [
+  "Todo",
+  "InProgress",
+  "Done",
+];

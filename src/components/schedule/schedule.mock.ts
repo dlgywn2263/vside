@@ -2,11 +2,11 @@
 
 import type { Category, Team } from "./schedule.types";
 
+// 현재 Category 타입("Work" | "Meeting" | "Study" | "Etc")에 맞게 수정
 export const CATEGORIES: Category[] = [
   "Work",
-  "School",
-  "Personal",
   "Meeting",
+  "Study",
   "Etc",
 ];
 
@@ -24,8 +24,8 @@ export const TEAMS: Team[] = [
     id: "team-b",
     name: "Team Beta",
     members: [
-      { id: "m4", name: "서준" },
-      { id: "m5", name: "하늘" },
-    ],
+      { id: "m4", name: "준호" },
+      { id: "m5", name: "지훈" },
+    ]
   },
 ];
