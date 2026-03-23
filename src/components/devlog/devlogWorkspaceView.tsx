@@ -26,7 +26,11 @@ import { DevlogStageBoard } from "./DevlogStageBoard";
 import { DevlogDetailModal } from "./DevlogDetailModal";
 import { DevlogFormModal } from "./DevlogFormModal";
 import DevlogScheduleReadonlyPanel from "./DevlogScheduleReadonlyPanel";
-import type { Mode } from "@/components/schedule/schedule.types";
+import type {
+  CalendarEvent,
+  Mode,
+  ProjectStage,
+} from "@/components/schedule/schedule.types";
 
 export function DevlogWorkspaceView({ workspaceId }: { workspaceId: string }) {
   const [workspaceName, setWorkspaceName] = useState("프로젝트 관리");
@@ -177,6 +181,21 @@ export function DevlogWorkspaceView({ workspaceId }: { workspaceId: string }) {
     };
   }, [filteredLogs]);
 
+  function mapScheduleStageToDevlogStage(stage?: ProjectStage): StageType {
+    switch (stage) {
+      case "Planning":
+        return "planning";
+      case "Design":
+        return "design";
+      case "Implementation":
+        return "implementation";
+      case "Wrapup":
+        return "wrapup";
+      default:
+        return "planning";
+    }
+  }
+
   function openCreateModal(defaultStage?: StageType) {
     setDetailTarget(null);
     setEditingTarget(null);
@@ -186,6 +205,30 @@ export function DevlogWorkspaceView({ workspaceId }: { workspaceId: string }) {
       projectId: projects[0]?.id ? String(projects[0].id) : "",
       date: todayYmd(),
       stage: defaultStage ?? "planning",
+    });
+
+    setIsCreateOpen(true);
+  }
+
+  function openCreateModalFromSchedule(event: CalendarEvent) {
+    setDetailTarget(null);
+    setEditingTarget(null);
+
+    setForm({
+      ...emptyForm,
+      projectId: projects[0]?.id ? String(projects[0].id) : "",
+      title: event.title,
+      stage: mapScheduleStageToDevlogStage(event.stage),
+      summary: "",
+      content: "",
+      tagsText: "",
+      goal: "",
+      design: "",
+      issue: "",
+      solution: "",
+      nextPlan: "",
+      commitHash: "",
+      progress: "",
     });
 
     setIsCreateOpen(true);
@@ -305,13 +348,12 @@ export function DevlogWorkspaceView({ workspaceId }: { workspaceId: string }) {
         </div>
       ) : (
         <div className="grid gap-6 xl:grid-cols-[460px_minmax(0,1fr)]">
-          {/* 왼쪽: 일정관리 읽기 전용 캘린더 */}
           <DevlogScheduleReadonlyPanel
             workspaceId={workspaceId}
             mode={scheduleMode}
+            onWriteDevlog={openCreateModalFromSchedule}
           />
 
-          {/* 오른쪽: 기존 개발일지 단계 보드 */}
           <DevlogStageBoard
             logsByStage={logsByStage}
             onOpenDetail={setDetailTarget}

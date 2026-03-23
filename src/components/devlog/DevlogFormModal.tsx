@@ -48,7 +48,7 @@ export function DevlogFormModal({
         </div>
 
         <div className="grid gap-4 md:grid-cols-2">
-          <DevlogField label="프로젝트">
+          {/* <DevlogField label="프로젝트">
             <select
               value={form.projectId}
               disabled={!!editingTarget}
@@ -64,6 +64,16 @@ export function DevlogFormModal({
                 </option>
               ))}
             </select>
+          </DevlogField> */}
+          <DevlogField label="제목" className="md:col-span-2">
+            <input
+              value={form.title}
+              onChange={(e) =>
+                setForm((prev) => ({ ...prev, title: e.target.value }))
+              }
+              placeholder="예: 로그인 API 구현"
+              className="h-11 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none"
+            />
           </DevlogField>
 
           <DevlogField label="단계">
@@ -84,17 +94,6 @@ export function DevlogFormModal({
             </select>
           </DevlogField>
 
-          <DevlogField label="제목" className="md:col-span-2">
-            <input
-              value={form.title}
-              onChange={(e) =>
-                setForm((prev) => ({ ...prev, title: e.target.value }))
-              }
-              placeholder="예: 로그인 API 구현"
-              className="h-11 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none"
-            />
-          </DevlogField>
-
           <DevlogField label="날짜">
             <input
               type="date"
@@ -106,7 +105,7 @@ export function DevlogFormModal({
             />
           </DevlogField>
 
-          <DevlogField label="진행률">
+          {/* <DevlogField label="진행률">
             <input
               type="number"
               min={0}
@@ -118,7 +117,7 @@ export function DevlogFormModal({
               placeholder="0~100"
               className="h-11 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none"
             />
-          </DevlogField>
+          </DevlogField> */}
 
           <DevlogField label="요약" className="md:col-span-2">
             <input

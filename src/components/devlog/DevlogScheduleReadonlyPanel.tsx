@@ -29,11 +29,13 @@ import DevlogReadonlySelectedDayCard from "./DevlogReadonlySelectedDayCard";
 type Props = {
   workspaceId: string;
   mode: Mode;
+  onWriteDevlog?: (event: CalendarEvent) => void;
 };
 
 export default function DevlogScheduleReadonlyPanel({
   workspaceId,
   mode,
+  onWriteDevlog,
 }: Props) {
   const [selectedDate, setSelectedDate] = React.useState<Date>(new Date());
   const [events, setEvents] = React.useState<CalendarEvent[]>([]);
@@ -130,6 +132,7 @@ export default function DevlogScheduleReadonlyPanel({
       <DevlogReadonlySelectedDayCard
         selectedDate={selectedDate}
         dayEvents={dayEvents}
+        onWriteDevlog={onWriteDevlog}
       />
     </div>
   );

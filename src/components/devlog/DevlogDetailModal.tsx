@@ -51,7 +51,7 @@ export function DevlogDetailModal({ item, onClose, onEdit, onDelete }: Props) {
 
         <div className="mt-6 grid gap-4 md:grid-cols-2">
           <DevlogInfoBlock title="요약" value={item.summary} />
-          <DevlogInfoBlock title="진행률" value={`${item.progress ?? 0}%`} />
+          {/* <DevlogInfoBlock title="진행률" value={`${item.progress ?? 0}%`} /> */}
           <DevlogInfoBlock title="목표" value={item.goal} />
           <DevlogInfoBlock title="설계" value={item.design} />
           <DevlogInfoBlock title="문제 상황" value={item.issue} />

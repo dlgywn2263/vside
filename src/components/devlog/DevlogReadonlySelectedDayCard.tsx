@@ -1,36 +1,27 @@
 "use client";
 
+import * as React from "react";
 import { format } from "date-fns";
 import { ko } from "date-fns/locale";
-import type {
-  CalendarEvent,
-  ProjectStage,
-} from "@/components/schedule/schedule.types";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import type { CalendarEvent } from "@/components/schedule/schedule.types";
+import {
+  STAGE_BADGE_COLORS,
+  STAGE_LABELS,
+} from "@/components/schedule/schedule.colors";
 
 type Props = {
   selectedDate: Date;
   dayEvents: CalendarEvent[];
-};
-
-const STAGE_LABELS: Record<ProjectStage, string> = {
-  Planning: "기획",
-  Design: "설계",
-  Implementation: "구현",
-  Wrapup: "마무리",
-};
-
-const STAGE_BADGE_CLASS: Record<ProjectStage, string> = {
-  Planning: "bg-blue-100 text-blue-700 hover:bg-blue-100",
-  Design: "bg-pink-100 text-pink-700 hover:bg-pink-100",
-  Implementation: "bg-purple-100 text-purple-700 hover:bg-purple-100",
-  Wrapup: "bg-green-100 text-green-700 hover:bg-green-100",
+  onWriteDevlog?: (event: CalendarEvent) => void;
 };
 
 export default function DevlogReadonlySelectedDayCard({
   selectedDate,
   dayEvents,
+  onWriteDevlog,
 }: Props) {
   return (
     <Card className="rounded-2xl border bg-white">
@@ -43,27 +34,25 @@ export default function DevlogReadonlySelectedDayCard({
 
       <CardContent className="space-y-3">
         {dayEvents.length === 0 ? (
-          <div className="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">
-            해당 날짜에 포함된 일정이 없습니다.
+          <div className="rounded-xl border border-dashed p-5 text-center text-sm text-muted-foreground">
+            해당 날짜에 일정이 없습니다.
           </div>
         ) : (
           dayEvents.map((event) => (
-            <div key={event.id} className="rounded-xl border p-4 space-y-3">
+            <div key={event.id} className="rounded-xl border p-4">
               <div className="flex flex-wrap items-center gap-2">
                 <Badge variant="secondary">{event.category}</Badge>
 
                 {event.stage ? (
-                  <Badge className={STAGE_BADGE_CLASS[event.stage]}>
+                  <Badge className={STAGE_BADGE_COLORS[event.stage]}>
                     {STAGE_LABELS[event.stage]}
                   </Badge>
                 ) : null}
 
-                <div className="min-w-0 flex-1 truncate font-medium">
-                  {event.title}
-                </div>
+                <div className="truncate font-medium">{event.title}</div>
               </div>
 
-              <div className="text-sm text-muted-foreground">
+              <div className="mt-2 text-sm text-muted-foreground">
                 {event.startDateISO}
                 {event.startDateISO !== event.endDateISO
                   ? ` ~ ${event.endDateISO}`
@@ -71,14 +60,24 @@ export default function DevlogReadonlySelectedDayCard({
               </div>
 
               {event.location ? (
-                <div className="text-sm">{event.location}</div>
+                <div className="mt-1 text-sm">{event.location}</div>
               ) : null}
 
               {event.description ? (
-                <div className="text-sm text-muted-foreground whitespace-pre-wrap break-words">
+                <div className="mt-3 rounded-lg bg-muted/40 p-3 text-sm whitespace-pre-wrap">
                   {event.description}
                 </div>
               ) : null}
+
+              <div className="mt-3 flex justify-end">
+                <Button
+                  type="button"
+                  onClick={() => onWriteDevlog?.(event)}
+                  className="rounded-sm"
+                >
+                  일지 쓰기
+                </Button>
+              </div>
             </div>
           ))
         )}
