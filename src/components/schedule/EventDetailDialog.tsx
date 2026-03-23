@@ -1,5 +1,3 @@
-// 일정 카드 클릭 시 열리는 '상세 보기' 다이얼로그(수정/삭제 버튼 포함) 컴포넌트
-
 "use client";
 
 import type { CalendarEvent, Team } from "./schedule.types";
@@ -54,7 +52,7 @@ export default function EventDetailDialog({
               <div className="text-lg font-semibold">{event.title}</div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="rounded-xl border p-3">
                 <div className="text-xs text-muted-foreground">기간</div>
                 <div className="font-medium">
@@ -73,8 +71,15 @@ export default function EventDetailDialog({
               <div className="rounded-xl border p-3">
                 <div className="text-xs text-muted-foreground">범위</div>
                 <div className="font-medium">
-                  {event.mode === "team" ? (currentTeam?.name ?? "팀") : "개인"}
+                  {event.mode === "team"
+                    ? (currentTeam?.name ?? event.workspaceName ?? "팀")
+                    : (event.workspaceName ?? "개인")}
                 </div>
+              </div>
+
+              <div className="rounded-xl border p-3">
+                <div className="text-xs text-muted-foreground">작성자</div>
+                <div className="font-medium">{event.creatorName ?? "없음"}</div>
               </div>
             </div>
 
@@ -89,8 +94,25 @@ export default function EventDetailDialog({
               </div>
             ) : null}
 
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <div className="rounded-xl border p-3">
+                <div className="text-xs text-muted-foreground">단계</div>
+                <div className="font-medium">{event.stage ?? "없음"}</div>
+              </div>
+
+              <div className="rounded-xl border p-3">
+                <div className="text-xs text-muted-foreground">역할</div>
+                <div className="font-medium">{event.role ?? "없음"}</div>
+              </div>
+
+              <div className="rounded-xl border p-3">
+                <div className="text-xs text-muted-foreground">상태</div>
+                <div className="font-medium">{event.status ?? "없음"}</div>
+              </div>
+            </div>
+
             <div className="rounded-xl border p-3">
-              <div className="text-xs text-muted-foreground mb-2">설명</div>
+              <div className="mb-2 text-xs text-muted-foreground">설명</div>
               <div className="whitespace-pre-wrap text-sm">
                 {event.description?.trim() ? event.description : "설명 없음"}
               </div>

@@ -36,7 +36,7 @@ export default function CalendarCard({
 }: Props) {
   const modifiers = React.useMemo(
     () => buildCalendarModifiers({ dateStageMap }),
-    [dateStageMap]
+    [dateStageMap],
   );
 
   return (
@@ -62,11 +62,11 @@ export default function CalendarCard({
               backgroundImage:
                 "linear-gradient(to top, #ec4899 0 5px, transparent 5px)",
             },
-            development: {
+            implementation: {
               backgroundImage:
-                "linear-gradient(to top , #8b5cf6 0 5px, transparent 5px)",
+                "linear-gradient(to top, #8b5cf6 0 5px, transparent 5px)",
             },
-            finalization: {
+            wrapup: {
               backgroundImage:
                 "linear-gradient(to top, #22c55e 0 5px, transparent 5px)",
             },

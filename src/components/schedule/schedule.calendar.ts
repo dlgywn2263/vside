@@ -13,10 +13,10 @@ export function buildCalendarModifiers({ dateStageMap }: Params) {
       dateStageMap.get(format(date, "yyyy-MM-dd")) === "Planning",
     design: (date: Date) =>
       dateStageMap.get(format(date, "yyyy-MM-dd")) === "Design",
-    development: (date: Date) =>
-      dateStageMap.get(format(date, "yyyy-MM-dd")) === "Development",
-    finalization: (date: Date) =>
-      dateStageMap.get(format(date, "yyyy-MM-dd")) === "Finalization",
+    implementation: (date: Date) =>
+      dateStageMap.get(format(date, "yyyy-MM-dd")) === "Implementation",
+    wrapup: (date: Date) =>
+      dateStageMap.get(format(date, "yyyy-MM-dd")) === "Wrapup",
   };
 }
 
@@ -27,7 +27,7 @@ export function buildCalendarModifierClassNames() {
   return {
     planning: `${base} after:bg-blue-500`,
     design: `${base} after:bg-pink-500`,
-    development: `${base} after:bg-purple-500`,
-    finalization: `${base} after:bg-green-500`,
+    implementation: `${base} after:bg-purple-500`,
+    wrapup: `${base} after:bg-green-500`,
   };
 }

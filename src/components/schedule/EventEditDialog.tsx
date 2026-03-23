@@ -1,25 +1,24 @@
 "use client";
 
-import * as React from "react";
 import type {
   Category,
-  Mode,
-  Team,
-  ProjectStage,
-  ProjectRole,
   EventStatus,
+  Mode,
+  ProjectRole,
+  ProjectStage,
+  Team,
 } from "./schedule.types";
 import {
-  PROJECT_STAGES,
-  PROJECT_ROLES,
   EVENT_STATUSES,
+  PROJECT_ROLES,
+  PROJECT_STAGES,
 } from "./schedule.types";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
-  DialogDescription,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -43,21 +42,21 @@ type Props = {
 
   categories: Category[];
 
-  fTitle: string;
+  fTitle?: string;
   setFTitle: (v: string) => void;
-  fDesc: string;
+  fDesc?: string;
   setFDesc: (v: string) => void;
-  fLoc: string;
+  fLoc?: string;
   setFLoc: (v: string) => void;
   fCat: Category;
   setFCat: (v: Category) => void;
 
-  fStartDateISO: string;
+  fStartDateISO?: string;
   setFStartDateISO: (v: string) => void;
-  fEndDateISO: string;
+  fEndDateISO?: string;
   setFEndDateISO: (v: string) => void;
 
-  fAssignees: string;
+  fAssignees?: string;
   setFAssignees: (v: string) => void;
 
   fStage: ProjectStage;
@@ -75,8 +74,8 @@ type Props = {
 const STAGE_LABELS: Record<ProjectStage, string> = {
   Planning: "기획",
   Design: "설계",
-  Development: "구현",
-  Finalization: "마무리",
+  Implementation: "구현",
+  Wrapup: "마무리",
 };
 
 const ROLE_LABELS: Record<ProjectRole, string> = {
@@ -99,19 +98,19 @@ export default function EventEditDialog({
   mode,
   currentTeam,
   categories,
-  fTitle,
+  fTitle = "",
   setFTitle,
-  fDesc,
+  fDesc = "",
   setFDesc,
-  fLoc,
+  fLoc = "",
   setFLoc,
   fCat,
   setFCat,
-  fStartDateISO,
+  fStartDateISO = "",
   setFStartDateISO,
-  fEndDateISO,
+  fEndDateISO = "",
   setFEndDateISO,
-  fAssignees,
+  fAssignees = "",
   setFAssignees,
   fStage,
   setFStage,
@@ -121,14 +120,19 @@ export default function EventEditDialog({
   setFStatus,
   onSave,
 }: Props) {
+  const isTitleEmpty = !fTitle.trim();
+  const isDateInvalid = !fStartDateISO.trim() || !fEndDateISO.trim();
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[680px]">
         <DialogHeader>
           <DialogTitle>{editingId ? "일정 수정" : "일정 추가"}</DialogTitle>
           <DialogDescription>
-            {mode === "team" ? `팀: ${currentTeam?.name}` : "개인 일정"} · 기간
-            일정과 작업 속성을 함께 저장합니다.
+            {mode === "team"
+              ? `팀: ${currentTeam?.name ?? "팀 일정"}`
+              : "개인 일정"}{" "}
+            · 기간 일정과 작업 속성을 함께 저장합니다.
           </DialogDescription>
         </DialogHeader>
 
@@ -141,7 +145,7 @@ export default function EventEditDialog({
               onChange={(e) => setFTitle(e.target.value)}
               placeholder="예: 발표 준비, 로그인 API 구현"
             />
-            {!fTitle.trim() ? (
+            {isTitleEmpty ? (
               <p className="mt-1 text-xs text-muted-foreground">
                 제목은 필수입니다.
               </p>
@@ -259,9 +263,6 @@ export default function EventEditDialog({
                 onChange={(e) => setFAssignees(e.target.value)}
                 placeholder="예: 효주, 민수"
               />
-              <p className="mt-1 text-xs text-muted-foreground">
-                추후에는 팀 멤버 선택 UI로 확장할 수 있습니다.
-              </p>
             </div>
           ) : null}
 
@@ -280,14 +281,7 @@ export default function EventEditDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             취소
           </Button>
-          <Button
-            onClick={onSave}
-            disabled={
-              !fTitle.trim() ||
-              !fStartDateISO.trim() ||
-              !fEndDateISO.trim()
-            }
-          >
+          <Button onClick={onSave} disabled={isTitleEmpty || isDateInvalid}>
             저장
           </Button>
         </div>

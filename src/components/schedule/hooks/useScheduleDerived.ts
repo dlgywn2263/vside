@@ -19,7 +19,7 @@ import {
 type Params = {
   events: CalendarEvent[];
   mode: Mode;
-  teamId: string;
+  workspaceId: string;
   category: Category | "ALL";
   query: string;
   selectedDate: Date;
@@ -28,7 +28,7 @@ type Params = {
 export function useScheduleDerived({
   events,
   mode,
-  teamId,
+  workspaceId,
   category,
   query,
   selectedDate,
@@ -39,35 +39,46 @@ export function useScheduleDerived({
     const q = query.trim().toLowerCase();
 
     return events
-      .filter((e) => matchesScope(e, mode, teamId))
+      .filter((e) => matchesScope(e, mode, workspaceId))
       .filter((e) => (category === "ALL" ? true : e.category === category))
       .filter((e) => {
         if (!q) return true;
-        const hay =
-          `${e.title} ${e.description ?? ""} ${e.location ?? ""} ${e.stage ?? ""} ${e.status ?? ""} ${(e.assignees ?? []).join(" ")}`.toLowerCase();
-        return hay.includes(q);
+
+        const haystack = [
+          e.title,
+          e.description ?? "",
+          e.location ?? "",
+          e.stage ?? "",
+          e.status ?? "",
+          e.workspaceName ?? "",
+          ...(e.assignees ?? []),
+        ]
+          .join(" ")
+          .toLowerCase();
+
+        return haystack.includes(q);
       })
       .slice()
       .sort(sortByDateRange);
-  }, [events, mode, teamId, category, query]);
+  }, [events, mode, workspaceId, category, query]);
 
   const dayEvents = React.useMemo(
     () => scopedFiltered.filter((e) => isDateInEventRange(selectedISO, e)),
-    [scopedFiltered, selectedISO]
+    [scopedFiltered, selectedISO],
   );
 
   const weekEvents = React.useMemo(() => {
     const startISO = format(
       startOfWeek(selectedDate, { weekStartsOn: 0 }),
-      "yyyy-MM-dd"
+      "yyyy-MM-dd",
     );
     const endISO = format(
       endOfWeek(selectedDate, { weekStartsOn: 0 }),
-      "yyyy-MM-dd"
+      "yyyy-MM-dd",
     );
 
     return scopedFiltered.filter(
-      (e) => e.startDateISO <= endISO && e.endDateISO >= startISO
+      (e) => e.startDateISO <= endISO && e.endDateISO >= startISO,
     );
   }, [scopedFiltered, selectedDate]);
 
@@ -75,60 +86,62 @@ export function useScheduleDerived({
     return scopedFiltered.filter((e) => {
       const dates = getDatesInRange(e.startDateISO, e.endDateISO);
       return dates.some((iso) => {
-        const d = new Date(`${iso}T00:00:00`);
-        return isSameMonth(d, selectedDate);
+        const date = new Date(`${iso}T00:00:00`);
+        return isSameMonth(date, selectedDate);
       });
     }).length;
   }, [scopedFiltered, selectedDate]);
 
   const todayCount = React.useMemo(() => {
-    const t = todayISO();
-    return scopedFiltered.filter((e) => isDateInEventRange(t, e)).length;
+    const today = todayISO();
+    return scopedFiltered.filter((e) => isDateInEventRange(today, e)).length;
   }, [scopedFiltered]);
 
   const personalNextTitle = React.useMemo(() => {
-    const t = todayISO();
+    const today = todayISO();
     return (
-      scopedFiltered.find((e) => e.endDateISO >= t)?.title ?? "예정된 일정 없음"
+      scopedFiltered.find((e) => e.endDateISO >= today)?.title ??
+      "예정된 일정 없음"
     );
   }, [scopedFiltered]);
 
   const monthTopCategory = React.useMemo(() => {
     const counts = new Map<string, number>();
 
-    for (const e of scopedFiltered) {
-      const dates = getDatesInRange(e.startDateISO, e.endDateISO);
+    for (const event of scopedFiltered) {
+      const dates = getDatesInRange(event.startDateISO, event.endDateISO);
       const includedInMonth = dates.some((iso) => {
-        const d = new Date(`${iso}T00:00:00`);
-        return isSameMonth(d, selectedDate);
+        const date = new Date(`${iso}T00:00:00`);
+        return isSameMonth(date, selectedDate);
       });
 
       if (!includedInMonth) continue;
-      counts.set(e.category, (counts.get(e.category) ?? 0) + 1);
+
+      counts.set(event.category, (counts.get(event.category) ?? 0) + 1);
     }
 
-    let best: string | null = null;
-    let bestV = -1;
+    let bestKey: string | null = null;
+    let bestValue = -1;
 
-    for (const [k, v] of counts) {
-      if (v > bestV) {
-        best = k;
-        bestV = v;
+    for (const [key, value] of counts) {
+      if (value > bestValue) {
+        bestKey = key;
+        bestValue = value;
       }
     }
 
-    return best ? `${best} (${bestV})` : "데이터 없음";
+    return bestKey ? `${bestKey} (${bestValue})` : "데이터 없음";
   }, [scopedFiltered, selectedDate]);
 
   const dateStageMap = React.useMemo(() => {
     const map = new Map<string, ProjectStage>();
 
-    for (const e of scopedFiltered) {
-      if (!e.stage) continue;
+    for (const event of scopedFiltered) {
+      if (!event.stage) continue;
 
-      const dates = getDatesInRange(e.startDateISO, e.endDateISO);
+      const dates = getDatesInRange(event.startDateISO, event.endDateISO);
       for (const iso of dates) {
-        map.set(iso, e.stage);
+        map.set(iso, event.stage);
       }
     }
 

@@ -1,66 +1,31 @@
-// 일정관리에서 쓰는 공통 유틸(스토리지/정렬/기간 계산/스코프 매칭)을 제공하는 파일
-
 import { format } from "date-fns";
-import type { CalendarEvent, Mode } from "./schedule.types";
+import type {
+  ApiScheduleResponse,
+  CalendarEvent,
+  Category,
+  EventStatus,
+  Mode,
+  ProjectRole,
+  ProjectStage,
+} from "./schedule.types";
 
-export const STORAGE_KEY = "schedule_events_v4";
-
-export function uid() {
-  return Math.random().toString(16).slice(2) + "-" + Date.now().toString(16);
-}
+export const API_BASE =
+  process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8080";
 
 export function todayISO() {
   return format(new Date(), "yyyy-MM-dd");
 }
 
 export function sortByDateRange(a: CalendarEvent, b: CalendarEvent) {
-  const aStart = a.startDateISO ?? "";
-  const bStart = b.startDateISO ?? "";
-  if (aStart !== bStart) {
-    return aStart.localeCompare(bStart);
+  if (a.startDateISO !== b.startDateISO) {
+    return a.startDateISO.localeCompare(b.startDateISO);
   }
 
-  const aEnd = a.endDateISO ?? "";
-  const bEnd = b.endDateISO ?? "";
-  return aEnd.localeCompare(bEnd);
-}
-
-export function loadEvents(): CalendarEvent[] {
-  if (typeof window === "undefined") return [];
-
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return [];
-
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-
-    return parsed.filter(
-      (item): item is CalendarEvent =>
-        item &&
-        typeof item === "object" &&
-        typeof item.id === "string" &&
-        typeof item.mode === "string" &&
-        typeof item.title === "string" &&
-        typeof item.category === "string" &&
-        typeof item.startDateISO === "string" &&
-        typeof item.endDateISO === "string" &&
-        typeof item.createdAt === "number" &&
-        typeof item.updatedAt === "number"
-    );
-  } catch {
-    return [];
+  if (a.endDateISO !== b.endDateISO) {
+    return a.endDateISO.localeCompare(b.endDateISO);
   }
-}
 
-export function saveEvents(events: CalendarEvent[]) {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(events));
-}
-
-export function matchesScope(e: CalendarEvent, mode: Mode, teamId: string) {
-  if (mode === "personal") return e.mode === "personal";
-  return e.mode === "team" && e.teamId === teamId;
+  return a.title.localeCompare(b.title);
 }
 
 export function isDateInEventRange(dateISO: string, event: CalendarEvent) {
@@ -78,4 +43,255 @@ export function getDatesInRange(startISO: string, endISO: string) {
   }
 
   return result;
+}
+
+export function matchesScope(
+  event: CalendarEvent,
+  mode: Mode,
+  workspaceId: string,
+) {
+  return event.mode === mode && event.workspaceId === workspaceId;
+}
+
+export function dedupeEvents(events: CalendarEvent[]) {
+  const map = new Map<string, CalendarEvent>();
+
+  for (const event of events) {
+    map.set(event.id, event);
+  }
+
+  return Array.from(map.values()).sort(sortByDateRange);
+}
+
+function normalizeEnum(value?: string | null) {
+  return (value ?? "").trim().toUpperCase().replace(/[\s-]/g, "_");
+}
+
+export function fromApiCategory(value?: string | null): Category {
+  switch (normalizeEnum(value)) {
+    case "WORK":
+      return "Work";
+    case "MEETING":
+      return "Meeting";
+    case "STUDY":
+      return "Study";
+    case "ETC":
+    default:
+      return "Etc";
+  }
+}
+
+export function toApiCategory(value: Category) {
+  switch (value) {
+    case "Work":
+      return "WORK";
+    case "Meeting":
+      return "MEETING";
+    case "Study":
+      return "STUDY";
+    case "Etc":
+    default:
+      return "ETC";
+  }
+}
+
+export function fromApiStage(value?: string | null): ProjectStage {
+  switch ((value ?? "").trim().toUpperCase()) {
+    case "PLANNING":
+      return "Planning";
+    case "DESIGN":
+      return "Design";
+    case "IMPLEMENTATION":
+      return "Implementation";
+    case "WRAPUP":
+    default:
+      return "Wrapup";
+  }
+}
+
+export function toApiStage(value: ProjectStage) {
+  switch (value) {
+    case "Planning":
+      return "PLANNING";
+    case "Design":
+      return "DESIGN";
+    case "Implementation":
+      return "IMPLEMENTATION";
+    case "Wrapup":
+    default:
+      return "WRAPUP";
+  }
+}
+
+export function fromApiRole(value?: string | null): ProjectRole {
+  switch (normalizeEnum(value)) {
+    case "FRONTEND":
+      return "Frontend";
+    case "BACKEND":
+      return "Backend";
+    case "DESIGNER":
+      return "Designer";
+    case "FULLSTACK":
+    default:
+      return "Fullstack";
+  }
+}
+
+export function toApiRole(value: ProjectRole) {
+  switch (value) {
+    case "Frontend":
+      return "FRONTEND";
+    case "Backend":
+      return "BACKEND";
+    case "Designer":
+      return "DESIGNER";
+    case "Fullstack":
+    default:
+      return "FULLSTACK";
+  }
+}
+
+export function fromApiStatus(value?: string | null): EventStatus {
+  switch (normalizeEnum(value)) {
+    case "TODO":
+      return "Todo";
+    case "IN_PROGRESS":
+    case "INPROGRESS":
+      return "InProgress";
+    case "DONE":
+    default:
+      return "Done";
+  }
+}
+
+export function toApiStatus(value: EventStatus) {
+  switch (value) {
+    case "Todo":
+      return "TODO";
+    case "InProgress":
+      return "IN_PROGRESS";
+    case "Done":
+    default:
+      return "DONE";
+  }
+}
+
+export function mapApiScheduleToCalendarEvent(
+  schedule: ApiScheduleResponse,
+): CalendarEvent {
+  return {
+    id: String(schedule.id),
+    mode: normalizeEnum(schedule.type) === "TEAM" ? "team" : "personal",
+    workspaceId: schedule.workspaceId,
+    workspaceName: schedule.workspaceName ?? undefined,
+    title: schedule.title,
+    description: schedule.description ?? undefined,
+    location: schedule.location ?? undefined,
+    category: fromApiCategory(schedule.category),
+    startDateISO: schedule.startDate,
+    endDateISO: schedule.endDate,
+    assignees: schedule.participants
+      ? schedule.participants
+          .split(",")
+          .map((name) => name.trim())
+          .filter(Boolean)
+      : undefined,
+    stage: schedule.stage ? fromApiStage(schedule.stage) : undefined,
+    role: schedule.role ? fromApiRole(schedule.role) : undefined,
+    status: schedule.status ? fromApiStatus(schedule.status) : undefined,
+    creatorId: schedule.creatorId ?? undefined,
+    creatorName: schedule.creatorName ?? undefined,
+  };
+}
+
+function getAccessToken() {
+  if (typeof window === "undefined") return null;
+  return localStorage.getItem("accessToken");
+}
+
+async function extractErrorMessage(response: Response) {
+  const text = await response.text();
+
+  if (!text) {
+    return `요청 실패 (${response.status})`;
+  }
+
+  try {
+    const data = JSON.parse(text);
+
+    if (typeof data === "string") return data;
+    if (data?.message) return String(data.message);
+    if (data?.error) return String(data.error);
+
+    return text;
+  } catch {
+    return text;
+  }
+}
+
+export async function apiFetch<T>(
+  path: string,
+  options: RequestInit = {},
+): Promise<T> {
+  const token =
+    typeof window !== "undefined" ? localStorage.getItem("accessToken") : null;
+
+  const response = await fetch(`${API_BASE}${path}`, {
+    ...options,
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(options.headers ?? {}),
+    },
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    throw new Error(await extractErrorMessage(response));
+  }
+
+  if (response.status === 204) {
+    return undefined as T;
+  }
+
+  const text = await response.text();
+
+  if (!text) {
+    return undefined as T;
+  }
+
+  return JSON.parse(text) as T;
+}
+
+export async function apiFetchJson<T>(
+  path: string,
+  method: "POST" | "PUT" | "DELETE",
+  body?: unknown,
+): Promise<T> {
+  const token =
+    typeof window !== "undefined" ? localStorage.getItem("accessToken") : null;
+
+  const response = await fetch(`${API_BASE}${path}`, {
+    method,
+    headers: {
+      ...(method !== "DELETE" ? { "Content-Type": "application/json" } : {}),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: method === "DELETE" ? undefined : JSON.stringify(body ?? {}),
+  });
+
+  if (!response.ok) {
+    throw new Error(await extractErrorMessage(response));
+  }
+
+  if (response.status === 204) {
+    return undefined as T;
+  }
+
+  const text = await response.text();
+
+  if (!text) {
+    return undefined as T;
+  }
+
+  return JSON.parse(text) as T;
 }

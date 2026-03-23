@@ -2,16 +2,12 @@ export type Category = "Work" | "Meeting" | "Study" | "Etc";
 export type Mode = "personal" | "team";
 export type EventStatus = "Todo" | "InProgress" | "Done";
 
-export type ProjectStage =
-  | "Planning"
-  | "Design"
-  | "Development"
-  | "Finalization";
+export type ProjectStage = "Planning" | "Design" | "Implementation" | "Wrapup";
 
 export type ProjectRole = "Frontend" | "Backend" | "Designer" | "Fullstack";
 
 export type Member = {
-  id: string;
+  userId: number;
   name: string;
 };
 
@@ -21,10 +17,16 @@ export type Team = {
   members: Member[];
 };
 
+export type WorkspaceOption = {
+  workspaceId: string;
+  workspaceName: string;
+};
+
 export type CalendarEvent = {
   id: string;
   mode: Mode;
-  teamId?: string;
+  workspaceId: string;
+  workspaceName?: string;
 
   title: string;
   description?: string;
@@ -40,15 +42,44 @@ export type CalendarEvent = {
   role?: ProjectRole;
   status?: EventStatus;
 
-  createdAt: number;
-  updatedAt: number;
+  creatorId?: number;
+  creatorName?: string;
+};
+
+export type ApiScheduleResponse = {
+  id: number;
+  type: string;
+  workspaceId: string;
+  workspaceName?: string | null;
+  creatorId?: number | null;
+  creatorName?: string | null;
+  title: string;
+  startDate: string;
+  endDate: string;
+  category: string;
+  location?: string | null;
+  stage?: string | null;
+  role?: string | null;
+  status?: string | null;
+  participants?: string | null;
+  description?: string | null;
+};
+
+export type ApiWorkspaceOptionResponse = {
+  workspaceId: string;
+  workspaceName: string;
+};
+
+export type ApiTeamMemberResponse = {
+  userId: number;
+  name: string;
 };
 
 export const PROJECT_STAGES: ProjectStage[] = [
   "Planning",
   "Design",
-  "Development",
-  "Finalization",
+  "Implementation",
+  "Wrapup",
 ];
 
 export const PROJECT_ROLES: ProjectRole[] = [
@@ -58,8 +89,4 @@ export const PROJECT_ROLES: ProjectRole[] = [
   "Fullstack",
 ];
 
-export const EVENT_STATUSES: EventStatus[] = [
-  "Todo",
-  "InProgress",
-  "Done",
-];
+export const EVENT_STATUSES: EventStatus[] = ["Todo", "InProgress", "Done"];

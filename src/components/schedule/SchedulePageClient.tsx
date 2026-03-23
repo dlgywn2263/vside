@@ -5,18 +5,26 @@ import { format } from "date-fns";
 import { Tabs, TabsContent } from "@/components/ui/tabs";
 
 import type {
-  Category,
+  ApiScheduleResponse,
+  ApiTeamMemberResponse,
+  ApiWorkspaceOptionResponse,
   CalendarEvent,
+  Category,
   Mode,
   Team,
+  WorkspaceOption,
 } from "./schedule.types";
-import { CATEGORIES, TEAMS } from "./schedule.mock";
+import { CATEGORIES } from "./schedule.mock";
 import {
-  loadEvents,
-  saveEvents,
+  apiFetch,
+  apiFetchJson,
+  dedupeEvents,
+  mapApiScheduleToCalendarEvent,
   sortByDateRange,
-  todayISO,
-  uid,
+  toApiCategory,
+  toApiRole,
+  toApiStage,
+  toApiStatus,
 } from "./schedule.utils";
 
 import TopBar from "./TopBar";
@@ -33,7 +41,22 @@ import { useScheduleDerived } from "./hooks/useScheduleDerived";
 
 export default function SchedulePageClient() {
   const [mode, setMode] = React.useState<Mode>("personal");
-  const [teamId, setTeamId] = React.useState<string>(TEAMS[0]?.id ?? "team-a");
+
+  const [personalWorkspaces, setPersonalWorkspaces] = React.useState<
+    WorkspaceOption[]
+  >([]);
+  const [teamWorkspaces, setTeamWorkspaces] = React.useState<WorkspaceOption[]>(
+    [],
+  );
+
+  const [selectedPersonalWorkspaceId, setSelectedPersonalWorkspaceId] =
+    React.useState("");
+  const [selectedTeamWorkspaceId, setSelectedTeamWorkspaceId] =
+    React.useState("");
+
+  const [teamMembers, setTeamMembers] = React.useState<ApiTeamMemberResponse[]>(
+    [],
+  );
 
   const [selectedDate, setSelectedDate] = React.useState<Date>(new Date());
   const [events, setEvents] = React.useState<CalendarEvent[]>([]);
@@ -44,72 +67,36 @@ export default function SchedulePageClient() {
   const [detailOpen, setDetailOpen] = React.useState(false);
   const [detailId, setDetailId] = React.useState<string | null>(null);
 
+  const [loading, setLoading] = React.useState(false);
+  const [bootLoading, setBootLoading] = React.useState(true);
+  const [error, setError] = React.useState<string | null>(null);
+
   const selectedISO = format(selectedDate, "yyyy-MM-dd");
+  const selectedWorkspaceId =
+    mode === "personal" ? selectedPersonalWorkspaceId : selectedTeamWorkspaceId;
 
   const form = useScheduleForm({ selectedISO });
 
-  React.useEffect(() => {
-    const loaded = loadEvents();
-    if (loaded.length > 0) {
-      setEvents(loaded);
-      return;
-    }
+  const currentTeam: Team | undefined = React.useMemo(() => {
+    if (mode !== "team" || !selectedTeamWorkspaceId) return undefined;
 
-    const seed: CalendarEvent[] = [
-      {
-        id: uid(),
-        mode: "personal",
-        title: "캡스톤 문서 정리",
-        description:
-          "기능 정의서/화면 설계 정리\n- 일정 페이지 구조\n- API 명세 초안",
-        location: "집",
-        category: "Work",
-        startDateISO: todayISO(),
-        endDateISO: todayISO(),
-        stage: "Planning",
-        role: "Frontend",
-        status: "Todo",
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-      },
-      {
-        id: uid(),
-        mode: "team",
-        teamId: TEAMS[0]?.id,
-        title: "발표 준비 주간",
-        description: "PPT / 시연 / 발표 대본 마무리",
-        location: "디스코드",
-        category: "Meeting",
-        startDateISO: todayISO(),
-        endDateISO: format(
-          new Date(new Date().setDate(new Date().getDate() + 4)),
-          "yyyy-MM-dd"
-        ),
-        assignees: ["효주", "민수"],
-        stage: "Development",
-        role: "Backend",
-        status: "InProgress",
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-      },
-    ];
+    const workspace = teamWorkspaces.find(
+      (item) => item.workspaceId === selectedTeamWorkspaceId,
+    );
 
-    setEvents(seed);
-    saveEvents(seed);
-  }, []);
-
-  React.useEffect(() => {
-    saveEvents(events);
-  }, [events]);
-
-  const currentTeam: Team | undefined = React.useMemo(
-    () => TEAMS.find((t) => t.id === teamId) ?? TEAMS[0],
-    [teamId]
-  );
+    return {
+      id: selectedTeamWorkspaceId,
+      name: workspace?.workspaceName ?? "팀 워크스페이스",
+      members: teamMembers.map((member) => ({
+        userId: member.userId,
+        name: member.name,
+      })),
+    };
+  }, [mode, selectedTeamWorkspaceId, teamWorkspaces, teamMembers]);
 
   const detailEvent = React.useMemo(() => {
     if (!detailId) return null;
-    return events.find((e) => e.id === detailId) ?? null;
+    return events.find((event) => event.id === detailId) ?? null;
   }, [detailId, events]);
 
   const {
@@ -123,11 +110,146 @@ export default function SchedulePageClient() {
   } = useScheduleDerived({
     events,
     mode,
-    teamId,
+    workspaceId: selectedWorkspaceId,
     category,
     query,
     selectedDate,
   });
+
+  const loadWorkspaceOptions = React.useCallback(async () => {
+    try {
+      setBootLoading(true);
+      setError(null);
+
+      const [personal, team] = await Promise.all([
+        apiFetch<ApiWorkspaceOptionResponse[]>(
+          "/api/schedules/personal/workspaces",
+        ),
+        apiFetch<ApiWorkspaceOptionResponse[]>(
+          "/api/schedules/team/workspaces",
+        ),
+      ]);
+
+      const personalOptions: WorkspaceOption[] = personal.map((item) => ({
+        workspaceId: item.workspaceId,
+        workspaceName: item.workspaceName,
+      }));
+
+      const teamOptions: WorkspaceOption[] = team.map((item) => ({
+        workspaceId: item.workspaceId,
+        workspaceName: item.workspaceName,
+      }));
+
+      setPersonalWorkspaces(personalOptions);
+      setTeamWorkspaces(teamOptions);
+
+      setSelectedPersonalWorkspaceId((prev) => {
+        if (prev && personalOptions.some((w) => w.workspaceId === prev)) {
+          return prev;
+        }
+        return personalOptions[0]?.workspaceId ?? "";
+      });
+
+      setSelectedTeamWorkspaceId((prev) => {
+        if (prev && teamOptions.some((w) => w.workspaceId === prev)) {
+          return prev;
+        }
+        return teamOptions[0]?.workspaceId ?? "";
+      });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "워크스페이스 조회 실패");
+    } finally {
+      setBootLoading(false);
+    }
+  }, []);
+
+  const loadTeamMembers = React.useCallback(async () => {
+    if (mode !== "team" || !selectedTeamWorkspaceId) {
+      setTeamMembers([]);
+      return;
+    }
+
+    try {
+      const members = await apiFetch<ApiTeamMemberResponse[]>(
+        `/api/schedules/team/workspaces/${selectedTeamWorkspaceId}/members`,
+      );
+      setTeamMembers(members);
+    } catch {
+      setTeamMembers([]);
+    }
+  }, [mode, selectedTeamWorkspaceId]);
+
+  const loadScheduleData = React.useCallback(async () => {
+    if (!selectedWorkspaceId) {
+      setEvents([]);
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setError(null);
+
+      const commonParams = new URLSearchParams({
+        view: mode,
+        workspaceId: selectedWorkspaceId,
+      });
+
+      const dayParams = new URLSearchParams(commonParams.toString());
+      dayParams.set("date", selectedISO);
+      dayParams.set("category", "all");
+
+      const monthParams = new URLSearchParams(commonParams.toString());
+      monthParams.set("year", String(selectedDate.getFullYear()));
+      monthParams.set("month", String(selectedDate.getMonth() + 1));
+
+      const weekParams = new URLSearchParams(commonParams.toString());
+      weekParams.set("date", selectedISO);
+
+      const [dayRes, monthRes, weekRes] = await Promise.all([
+        apiFetch<ApiScheduleResponse[]>(
+          `/api/schedules?${dayParams.toString()}`,
+        ),
+        apiFetch<ApiScheduleResponse[]>(
+          `/api/schedules/calendar?${monthParams.toString()}`,
+        ),
+        apiFetch<ApiScheduleResponse[]>(
+          `/api/schedules/weekly?${weekParams.toString()}`,
+        ),
+      ]);
+
+      const merged = dedupeEvents(
+        [...dayRes, ...monthRes, ...weekRes]
+          .map(mapApiScheduleToCalendarEvent)
+          .sort(sortByDateRange),
+      );
+
+      setEvents(merged);
+
+      if (detailId && !merged.some((event) => event.id === detailId)) {
+        setDetailOpen(false);
+        setDetailId(null);
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "일정 조회 실패");
+      setEvents([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [mode, selectedWorkspaceId, selectedISO, selectedDate, detailId]);
+
+  React.useEffect(() => {
+    loadWorkspaceOptions();
+  }, [loadWorkspaceOptions]);
+
+  React.useEffect(() => {
+    loadTeamMembers();
+  }, [loadTeamMembers]);
+
+  React.useEffect(() => {
+    if (!bootLoading) {
+      loadScheduleData();
+    }
+  }, [bootLoading, loadScheduleData]);
 
   function openDetail(id: string) {
     setDetailId(id);
@@ -135,93 +257,91 @@ export default function SchedulePageClient() {
   }
 
   function openEdit(id: string) {
-    const event = events.find((x) => x.id === id);
+    const event = events.find((item) => item.id === id);
     if (!event) return;
     form.openEdit(event);
   }
 
-  function remove(id: string) {
-    setEvents((prev) => prev.filter((e) => e.id !== id));
+  async function remove(id: string) {
+    try {
+      await apiFetchJson<void>(`/api/schedules/${id}`, "DELETE");
+      await loadScheduleData();
 
-    if (detailId === id) {
-      setDetailOpen(false);
-      setDetailId(null);
-    }
-    if (form.editingId === id) {
-      form.setEditOpen(false);
-      form.setEditingId(null);
+      if (detailId === id) {
+        setDetailOpen(false);
+        setDetailId(null);
+      }
+
+      if (form.editingId === id) {
+        form.setEditOpen(false);
+        form.setEditingId(null);
+      }
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "일정 삭제 실패");
     }
   }
 
-  function upsert() {
+  async function upsert() {
     const title = form.fTitle.trim();
+
     if (!title) return;
     if (!form.fStartDateISO.trim() || !form.fEndDateISO.trim()) return;
-    if (form.fEndDateISO < form.fStartDateISO) return;
-
-    const now = Date.now();
-
-    if (!form.editingId) {
-      const created: CalendarEvent = {
-        id: uid(),
-        mode,
-        teamId: mode === "team" ? teamId : undefined,
-        title,
-        description: form.fDesc.trim() || undefined,
-        location: form.fLoc.trim() || undefined,
-        category: form.fCat,
-        startDateISO: form.fStartDateISO,
-        endDateISO: form.fEndDateISO,
-        assignees:
-          mode === "team"
-            ? form.fAssignees
-                .split(",")
-                .map((s) => s.trim())
-                .filter(Boolean)
-            : undefined,
-        stage: form.fStage,
-        role: form.fRole,
-        status: form.fStatus,
-        createdAt: now,
-        updatedAt: now,
-      };
-
-      setEvents((prev) => [...prev, created].sort(sortByDateRange));
-    } else {
-      setEvents((prev) =>
-        prev
-          .map((e) => {
-            if (e.id !== form.editingId) return e;
-
-            return {
-              ...e,
-              mode,
-              teamId: mode === "team" ? teamId : undefined,
-              title,
-              description: form.fDesc.trim() || undefined,
-              location: form.fLoc.trim() || undefined,
-              category: form.fCat,
-              startDateISO: form.fStartDateISO,
-              endDateISO: form.fEndDateISO,
-              assignees:
-                mode === "team"
-                  ? form.fAssignees
-                      .split(",")
-                      .map((s) => s.trim())
-                      .filter(Boolean)
-                  : undefined,
-              stage: form.fStage,
-              role: form.fRole,
-              status: form.fStatus,
-              updatedAt: now,
-            };
-          })
-          .sort(sortByDateRange)
-      );
+    if (form.fEndDateISO < form.fStartDateISO) {
+      alert("종료일은 시작일보다 빠를 수 없습니다.");
+      return;
+    }
+    if (!selectedWorkspaceId) {
+      alert("워크스페이스를 먼저 선택하세요.");
+      return;
     }
 
-    form.setEditOpen(false);
-    form.setEditingId(null);
+    const createPayload = {
+      type: mode.toUpperCase(),
+      workspaceId: selectedWorkspaceId,
+      title,
+      startDate: form.fStartDateISO,
+      endDate: form.fEndDateISO,
+      category: toApiCategory(form.fCat),
+      location: form.fLoc.trim(),
+      stage: toApiStage(form.fStage),
+      role: toApiRole(form.fRole),
+      status: toApiStatus(form.fStatus),
+      participants: mode === "team" ? form.fAssignees.trim() : "",
+      description: form.fDesc.trim(),
+    };
+    const updatePayload = {
+      title,
+      startDate: form.fStartDateISO,
+      endDate: form.fEndDateISO,
+      category: toApiCategory(form.fCat),
+      location: form.fLoc.trim(),
+      stage: toApiStage(form.fStage),
+      role: toApiRole(form.fRole),
+      status: toApiStatus(form.fStatus),
+      participants: mode === "team" ? form.fAssignees.trim() : "",
+      description: form.fDesc.trim(),
+    };
+    try {
+      if (!form.editingId) {
+        await apiFetchJson<ApiScheduleResponse>(
+          "/api/schedules",
+          "POST",
+          createPayload,
+        );
+      } else {
+        await apiFetchJson<ApiScheduleResponse>(
+          `/api/schedules/${form.editingId}`,
+          "PUT",
+          updatePayload,
+        );
+      }
+
+      form.setEditOpen(false);
+      form.setEditingId(null);
+      await loadScheduleData();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "일정 저장 실패");
+    }
   }
 
   return (
@@ -231,17 +351,26 @@ export default function SchedulePageClient() {
         onCreate={() => form.openCreate(selectedISO)}
       />
 
+      {error ? (
+        <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {error}
+        </div>
+      ) : null}
+
       <Tabs
         value={mode}
-        onValueChange={(v) => setMode(v as Mode)}
+        onValueChange={(value) => setMode(value as Mode)}
         className="w-full"
       >
         <ScopeToolbar
           mode={mode}
           setMode={setMode}
-          teams={TEAMS}
-          teamId={teamId}
-          setTeamId={setTeamId}
+          personalWorkspaces={personalWorkspaces}
+          selectedPersonalWorkspaceId={selectedPersonalWorkspaceId}
+          setSelectedPersonalWorkspaceId={setSelectedPersonalWorkspaceId}
+          teamWorkspaces={teamWorkspaces}
+          selectedTeamWorkspaceId={selectedTeamWorkspaceId}
+          setSelectedTeamWorkspaceId={setSelectedTeamWorkspaceId}
           query={query}
           setQuery={setQuery}
           categories={CATEGORIES}
@@ -295,6 +424,18 @@ export default function SchedulePageClient() {
             />
           </div>
         </div>
+
+        {bootLoading || loading ? (
+          <div className="mt-4 text-sm text-muted-foreground">
+            일정 불러오는 중...
+          </div>
+        ) : null}
+
+        {!bootLoading && !loading && !selectedWorkspaceId ? (
+          <div className="mt-4 text-sm text-muted-foreground">
+            선택 가능한 워크스페이스가 없습니다.
+          </div>
+        ) : null}
 
         <TabsContent value="personal" className="hidden" />
         <TabsContent value="team" className="hidden" />

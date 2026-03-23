@@ -1,5 +1,3 @@
-// 모드에 따라 '팀 정보' 또는 '개인 요약'을 보여주는 우측 하단 카드 컴포넌트
-
 "use client";
 
 import type { Mode, Team } from "./schedule.types";
@@ -15,11 +13,9 @@ import {
 
 type Props = {
   mode: Mode;
-
   currentTeam?: Team;
   personalNextTitle: string;
   monthTopCategory: string;
-
   onQuickCreate: () => void;
 };
 
@@ -32,18 +28,26 @@ export default function SideInfoCard({
 }: Props) {
   if (mode === "team") {
     return (
-      <Card className="rounded-2xl h-full">
+      <Card className="h-full rounded-2xl">
         <CardHeader>
           <CardTitle>팀 정보</CardTitle>
-          <CardDescription>{currentTeam?.name}</CardDescription>
+          <CardDescription>
+            {currentTeam?.name ?? "팀 정보 없음"}
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="flex flex-wrap gap-2">
-            {currentTeam?.members.map((m) => (
-              <Badge key={m.id} variant="outline">
-                {m.name}
-              </Badge>
-            ))}
+            {currentTeam?.members?.length ? (
+              currentTeam.members.map((member) => (
+                <Badge key={member.userId} variant="outline">
+                  {member.name}
+                </Badge>
+              ))
+            ) : (
+              <div className="text-sm text-muted-foreground">
+                팀 멤버가 없습니다.
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -51,7 +55,7 @@ export default function SideInfoCard({
   }
 
   return (
-    <Card className="rounded-2xl h-full">
+    <Card className="h-full rounded-2xl">
       <CardHeader>
         <CardTitle>개인 요약</CardTitle>
         <CardDescription>빠른 확인용</CardDescription>
