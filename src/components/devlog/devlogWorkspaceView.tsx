@@ -21,7 +21,7 @@ import {
   fetchWorkspaceDevlogs,
   updateDevlog,
 } from "@/lib/devlog/api";
-import { DevlogHeader } from "./DevlogHeader";
+import { Temp } from "./Temp";
 import { DevlogStageBoard } from "./DevlogStageBoard";
 import { DevlogDetailModal } from "./DevlogDetailModal";
 import { DevlogFormModal } from "./DevlogFormModal";
@@ -329,7 +329,7 @@ export function DevlogWorkspaceView({
 
   return (
     <div className="space-y-6">
-      <DevlogHeader
+      <Temp
         workspaceName={workspaceName}
         workspaceModeLabel={workspaceModeLabel}
         search={search}
