@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { User } from "../types";
 import { Card, Field, cn } from "../ui";
+import { ActivityBars } from "../../activity/ActivityBars";
 
 export default function ProfileTab({
   user,
@@ -190,6 +191,13 @@ export default function ProfileTab({
           ) : null} */}
         </div>
       </Card>
+      <div className="rounded-2xl border border-gray-200 bg-white p-6">
+        <h2 className="text-lg font-bold text-gray-900">일자별 활동량</h2>
+        <p className="mt-1 text-sm text-gray-500">선택한 기간 기준</p>
+        <div className="mt-5">
+          <ActivityBars />
+        </div>
+      </div>
     </div>
   );
 }
